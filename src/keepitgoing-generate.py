@@ -261,25 +261,25 @@ PERMANENT_DIRECTIVE = "when you show me a menu or ask y/n, always put your recom
 # The preamble frames everything as ambient background — continue what you're
 # doing, absorb the reminders, don't change course.
 PREAMBLE_VARIANTS = [
-    "[ambient — DO NOT change what you're doing. keep working on your current task. these are background reminders to absorb as you go, not new instructions.]",
-    "[background — continue your current work. don't switch tasks. these are mindset reminders, not action items. absorb them and keep going.]",
-    "[don't derail — stay on your current task. read these reminders passively. add to your mental checklist if useful, but do NOT stop or change direction.]",
-    "[keep working — these are sideline reminders, not new assignments. continue what you're doing. absorb, don't react. stay focused on your current task.]",
-    "[passive update — your current task is still the priority. these are ambient quality reminders. note them, don't act on them separately. keep building.]",
-    "[stay on course — this is not a new task. this is a background quality nudge. continue your current work. fold these into your thinking, don't pivot to them.]",
-    "[ambient context — don't stop. don't switch. these are reminders that run in the background of whatever you're already doing. continue.]",
-    "[no context switch — you're in the middle of something. keep going. these directives are ambient, like a coach murmuring from the sideline. absorb and continue.]",
+    "[ambient — DO NOT change what you're doing. if a command returns empty or is denied, accept it and move on — don't retry or investigate why. keep working.]",
+    "[background — continue your current work. STOP if you've run 3+ commands with the same intent — that's a loop. accept the answer and decide.]",
+    "[don't derail — stay on your task. if `git diff` returns nothing, the files are identical — don't run it 5 more ways. empty output IS the answer.]",
+    "[keep working — these are sideline reminders. if a command is DENIED, try ONE alternative then move on. don't read settings or hooks to debug permissions.]",
+    "[passive — your current task is priority. remember: git reset --hard is blocked by Claude Code itself. use `git checkout -B branch origin/branch` instead.]",
+    "[stay on course — don't pivot. don't narrate confusion in Thinking blocks. one diagnostic command, one decision, move on. no 'hmm let me try...' loops.]",
+    "[ambient — don't stop. don't switch. if you're investigating something and got your answer in 2 commands, STOP investigating. decide and act.]",
+    "[no context switch — keep going. token budget is real money. every re-read, re-grep, re-diff you don't need costs tokens. cache mentally, don't re-fetch.]",
 ]
 
 PERMANENT_DIRECTIVE_VARIANTS = [
-    "(think deeply. fill gaps. blocked? say so. design calls? decide. menus: #1 = yours.)",
-    "(think deeply. don't take the easy path. surface blockers. decide autonomously. menus: rec first.)",
-    "(think deeply. fill all the gaps you see. say what you need. don't wait. menus: #1.)",
-    "(think before you act. fill gaps. shout what blocks you. be decisive. menus: recommend as #1.)",
-    "(depth over speed. fill every gap. surface blockers. be autonomous. menus: #1 = your pick.)",
-    "(think deeply. do it right, not fast. need something? say it. menus: rec = option 1.)",
-    "(the right path, not the easy path. fill gaps. blockers get repeated. menus: #1.)",
-    "(think deeply. fill all gaps. tell me what's stuck. own the design calls. menus: rec first.)",
+    "(think deeply. fill gaps. no retry loops. denied? try ONE alt then move on. menus: #1 = yours.)",
+    "(think deeply. don't loop. empty output = answer. denied command = use workaround. menus: rec first.)",
+    "(think deeply. fill gaps. 3 cmds same intent = STOP. cache results mentally. menus: #1.)",
+    "(depth > speed. fill gaps. no narrating confusion — decide. denied? pivot, don't investigate. menus: #1.)",
+    "(think deeply. no wasted tokens. one check, one answer. denied? one alternative. menus: #1 = your pick.)",
+    "(the right path, not the easy path. no loops. no re-reading files you just read. menus: rec = option 1.)",
+    "(think deeply. fill all gaps. surface blockers ONCE then proceed with best judgment. menus: #1.)",
+    "(think deeply. be efficient. every tool call costs tokens. make each one count. menus: rec first.)",
 ]
 
 DIRECTIVES = {
