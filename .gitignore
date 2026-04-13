@@ -1,0 +1,21 @@
+# Build output
+dist/
+
+# macOS
+.DS_Store
+*.swp
+
+# Runtime state (ephemeral)
+/tmp/claude-keepitgoing/
+
+# IDE
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# User-specific config (contains personal directives)
+keepitgoing-directives.json

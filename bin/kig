@@ -1,0 +1,93 @@
+#!/bin/bash
+# kig — toggle KeepItGoing on/off for the current iTerm session.
+#
+# Sets an iTerm User Variable named "user.keepitgoing" on the session
+# you run this from. The KeepItGoing applet reads that variable on every
+# poll and skips sessions where it's "off". The variable is per-session
+# and persists for the lifetime of that iTerm session — it survives
+# Claude Code's title rewrites, cwd changes, and tab moves.
+#
+# Usage:
+#   kig            show this help
+#   kig on         enable KeepItGoing for THIS tab (the default)
+#   kig off        disable KeepItGoing for THIS tab
+#   kig status     show the current state of THIS tab
+#   kig list       show every iTerm Claude tab and its kig state
+#
+# Run it from inside the tab you want to toggle. The escape sequence
+# only affects the session it's printed to.
+
+set -euo pipefail
+
+# Print iTerm OSC 1337 SetUserVar escape sequence.
+# Format: ESC ] 1337 ; SetUserVar = NAME = BASE64_VALUE BEL
+set_var() {
+  local name="$1" value="$2"
+  local b64
+  b64=$(printf '%s' "$value" | base64 | tr -d '\n')
+  printf '\e]1337;SetUserVar=%s=%s\a' "$name" "$b64"
+}
+
+cmd="${1:-help}"
+
+case "$cmd" in
+  on)
+    set_var keepitgoing on
+    echo "kig: ON for this tab — KeepItGoing will nudge it when idle"
+    ;;
+  off)
+    set_var keepitgoing off
+    echo "kig: OFF for this tab — KeepItGoing will leave it alone"
+    ;;
+  status)
+    # Read back the variable from iTerm via AppleScript on the focused session.
+    state=$(osascript <<'EOF' 2>/dev/null
+tell application "iTerm"
+  try
+    set v to variable named "user.keepitgoing" of current session of current tab of current window
+    if v is "" then
+      return "on (default)"
+    else
+      return v
+    end if
+  on error
+    return "on (default)"
+  end try
+end tell
+EOF
+)
+    echo "kig: this tab is $state"
+    ;;
+  list)
+    osascript <<'EOF' 2>/dev/null
+tell application "iTerm"
+  set out to ""
+  repeat with w in windows
+    repeat with t in tabs of w
+      repeat with s in sessions of t
+        set sn to name of s
+        if sn contains "Claude" or sn contains "(python" then
+          try
+            set v to variable named "user.keepitgoing" of s
+            if v is "" then set v to "on (default)"
+          on error
+            set v to "on (default)"
+          end try
+          set out to out & v & "  ::  " & sn & linefeed
+        end if
+      end repeat
+    end repeat
+  end repeat
+  return out
+end tell
+EOF
+    ;;
+  help|--help|-h|"")
+    sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+    ;;
+  *)
+    echo "kig: unknown command '$cmd'" >&2
+    echo "try: kig help" >&2
+    exit 1
+    ;;
+esac

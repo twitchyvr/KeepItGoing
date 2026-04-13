@@ -1,0 +1,9 @@
+{
+  "directives": [
+    {"text": "Your custom directive here — these get mixed into generated prompts."},
+    {"text": "Add project-specific reminders, personal preferences, or recurring instructions."}
+  ],
+  "settings": {
+    "global_suffix": "Respond concisely."
+  }
+}
