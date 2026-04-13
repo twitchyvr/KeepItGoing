@@ -665,6 +665,31 @@ DIRECTIVES = {
         "RAG pipeline maintenance: vector databases and retrieval sources must be clean, current, and secure. stale embeddings = stale answers = user distrust.",
         "for any AI-powered feature: what happens when the model is slow? when it hallucinates? when the API is down? design for degradation, not just for success.",
     ],
+    "scope_discipline": [
+        "stay on scope. the Issue you're working on defines the boundary. don't fix unrelated things, don't add unrelated features, don't refactor unrelated code.",
+        "scope drift is the #1 source of oversized PRs, merge conflicts, and wasted reviews. one Issue, one branch, one concern, one PR.",
+        "if you find a bug while fixing something else — file a new Issue. don't bundle the fix into the current PR.",
+        "ask before every change: is this part of the current Issue? if not, it belongs in a separate branch.",
+        "scope drift over time means the codebase accumulates 'while I was here' changes that nobody reviewed carefully. resist.",
+        "a 5-file PR gets a thorough review. a 40-file PR gets a 'looks fine to me.' keep PRs focused so reviews are meaningful.",
+        "the temptation to 'just also fix this while I'm here' is how 1-Issue PRs become 5-Issue PRs. file it separately.",
+        "if a branch has been open for days, it's probably drifting. check: do all changes still relate to the original Issue?",
+        "re-read the Issue before committing. does your diff address what was asked? if you changed things not in the Issue, split them out.",
+    ],
+    "stop_looping": [
+        "STOP LOOPING. if a command returns empty output, that IS the answer. don't run 5 variations of the same command hoping for different results.",
+        "if `git diff` returns nothing, the files are identical. accept it and move on. don't re-run with different flags.",
+        "empty output is data. no diff = no difference. no matches = not there. accept the result, don't re-investigate.",
+        "you ran that command already. if the output was empty, running it again with slightly different arguments won't change reality.",
+        "three consecutive commands with the same intent = you're in a loop. STOP. accept what you've learned and make a decision.",
+        "don't narrate confusion. if you're unsure, run ONE diagnostic command, read the result, and commit to an answer. no rambling.",
+        "token budget is real money. every 'let me try another approach' costs tokens. diagnose once, decide once, move on.",
+        "if you've been investigating the same question for more than 3 tool calls, you have enough information. decide and act.",
+        "the pattern: investigate → empty result → 'hmm, let me try...' → empty result → 'that's odd...' → repeat. this is BANNED. one check, one answer.",
+        "cache your own results. if you read a file 2 minutes ago, you still know what's in it. don't re-read.",
+        "git commands are deterministic. running `git diff A B` twice won't give different results. trust the first output.",
+        "when confused about branch state: `git log --oneline -5` ONCE, read it, decide. don't trace ancestry for 10 commands.",
+    ],
     "decide_whats_right": [
         "YOU decide what's right. don't wait for instructions on every decision. use your judgment, your knowledge, your expertise. that's why you're here.",
         "when faced with a judgment call — severity thresholds, architecture choices, UX tradeoffs, security policies — make the call. document why. move forward.",
@@ -2009,6 +2034,7 @@ def pick_n_categories(n, proj_ctx=None):
         "stop_asking_approval",
         "design_quality",
         "decide_whats_right",
+        "stop_looping",
     ]
     critical = [c for c in critical if c in eligible_cats]
 
