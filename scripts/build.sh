@@ -56,11 +56,11 @@ APP_PATH="${DIST_DIR}/${APP_NAME}.app"
 # Remove old build
 rm -rf "${APP_PATH}"
 
-echo "Compiling AppleScript..."
-osacompile -o "${APP_PATH}" "${TEMP_SCRIPT}"
+echo "Compiling AppleScript (stay-open applet)..."
+osacompile -s -o "${APP_PATH}" "${TEMP_SCRIPT}"
 rm -f "${TEMP_SCRIPT}"
 
-# Set bundle identifier in Info.plist
+# Set bundle identifier and stay-open flag in Info.plist
 if [ -f "${APP_PATH}/Contents/Info.plist" ]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${BUNDLE_ID}" "${APP_PATH}/Contents/Info.plist" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string ${BUNDLE_ID}" "${APP_PATH}/Contents/Info.plist"
@@ -68,6 +68,10 @@ if [ -f "${APP_PATH}/Contents/Info.plist" ]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleName ${APP_NAME}" "${APP_PATH}/Contents/Info.plist" 2>/dev/null || true
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 2.1.0" "${APP_PATH}/Contents/Info.plist" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 2.1.0" "${APP_PATH}/Contents/Info.plist"
+
+  # Ensure stay-open is set (osacompile -s should do this, but belt-and-suspenders)
+  /usr/libexec/PlistBuddy -c "Set :OSAAppletStayOpen true" "${APP_PATH}/Contents/Info.plist" 2>/dev/null || \
+  /usr/libexec/PlistBuddy -c "Add :OSAAppletStayOpen bool true" "${APP_PATH}/Contents/Info.plist"
 fi
 
 # Code sign
