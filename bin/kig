@@ -15,6 +15,12 @@
 #   kig model              show current classifier model
 #   kig model <profile>    switch classifier profile (haiku|sonnet|opus|minimax-highspeed|minimax)
 #   kig model list         list all profiles
+#   kig unstuck            escalate the focused Claude tab's stuck session to Opus (or configured model)
+#   kig unstuck --dry-run  show what context would be sent without actually calling Opus
+#   kig budget             show today's Claude escalation budget (wall-clock time used)
+#   kig budget set <dur>   set the daily escalation budget (e.g. 4h, 6h, 30m)
+#   kig budget model <m>   set the escalation model (opus|sonnet|haiku)
+#   kig escalations        tail the log of recent escalations and their outcomes
 #   kig watch              live countdown display, refreshing every second
 #   kig list               show every Claude tab's on/off state
 #   kig log                tail the KIG log
@@ -356,6 +362,134 @@ print(f'${G}✓${N} classifier profile set to: $arg')
         exit 1
         ;;
     esac
+    ;;
+  unstuck)
+    shift
+    # Capture last N lines of focused iTerm session, pipe to unstuck script
+    TMP_CTX="$STATE_DIR/unstuck-context-$$.txt"
+    osascript 2>/dev/null <<EOF > "$TMP_CTX"
+tell application "iTerm"
+  try
+    set sessionContents to contents of current session of current tab of current window
+    return sessionContents
+  on error
+    return ""
+  end try
+end tell
+EOF
+    if [ ! -s "$TMP_CTX" ]; then
+      echo "${R}✗${N} Could not capture iTerm session contents. Is iTerm focused on a Claude tab?" >&2
+      rm -f "$TMP_CTX"
+      exit 1
+    fi
+    # Keep only last 120 non-blank lines (like the classifier does)
+    grep -v '^[[:space:]]*$' "$TMP_CTX" | tail -120 > "$TMP_CTX.trimmed"
+    mv "$TMP_CTX.trimmed" "$TMP_CTX"
+    echo "${D}Context: $(wc -l < "$TMP_CTX") lines / $(wc -c < "$TMP_CTX") chars${N}"
+    echo "${B}⚡ Escalating to Claude (this may take 30-120s)...${N}"
+    # Pass through all remaining args (--dry-run, --force, --model, etc.)
+    NUDGE=$(python3 "$HOME/.claude/hooks/scripts/keepitgoing-unstuck.py" --input-file "$TMP_CTX" "$@" 2>&1 1>&3 3>&-)
+    status=$?
+    # Actually we need stdout (the nudge) separately from stderr; redo:
+    python3 "$HOME/.claude/hooks/scripts/keepitgoing-unstuck.py" --input-file "$TMP_CTX" "$@" > "$TMP_CTX.out" 2> "$TMP_CTX.err"
+    status=$?
+    if [ "$status" = 0 ]; then
+      if grep -q '"dry_run": true' "$TMP_CTX.out" 2>/dev/null; then
+        echo "${Y}--- DRY RUN ---${N}"
+        cat "$TMP_CTX.out"
+      else
+        echo "${G}--- Strategic nudge from Claude ---${N}"
+        cat "$TMP_CTX.out"
+        echo ""
+        echo "${G}--------------------------------${N}"
+        echo ""
+        echo "${D}$(cat "$TMP_CTX.err")${N}"
+        # Queue the nudge as the next KIG fire so it lands in the stuck session
+        cp "$TMP_CTX.out" "$STATE_DIR/override-prompt.txt"
+        touch "$STATE_DIR/fire-now.lock"
+        echo "${B}✓${N} Nudge queued as the next KIG fire (will land in the focused Claude tab within ~30s)."
+        echo "  To abort: ${D}kig cancel${N}"
+      fi
+    else
+      echo "${R}✗${N} Escalation failed (exit $status):"
+      cat "$TMP_CTX.err" >&2
+    fi
+    rm -f "$TMP_CTX" "$TMP_CTX.out" "$TMP_CTX.err"
+    exit "$status"
+    ;;
+  budget)
+    shift
+    sub="${1:-show}"
+    CFG="$HOME/.claude/hooks/keepitgoing-config.json"
+    mkdir -p "$(dirname "$CFG")"
+    case "$sub" in
+      show | "")
+        python3 "$HOME/.claude/hooks/scripts/keepitgoing-unstuck.py" --budget
+        if [ -f "$CFG" ]; then
+          model=$(python3 -c "import json; print(json.load(open('$CFG')).get('escalation_model', 'opus'))" 2>/dev/null || echo opus)
+          echo "  escalation model: $model"
+        fi
+        ;;
+      set)
+        dur="${2:-}"
+        if [ -z "$dur" ]; then
+          echo "usage: kig budget set <duration>  (e.g. 6h, 4h, 30m)" >&2
+          exit 1
+        fi
+        secs=$(parse_duration "$dur")
+        python3 -c "
+import json, pathlib
+p = pathlib.Path('$CFG')
+cfg = json.loads(p.read_text()) if p.exists() else {}
+cfg['claude_daily_budget_sec'] = $secs
+p.parent.mkdir(parents=True, exist_ok=True)
+p.write_text(json.dumps(cfg, indent=2))
+print('${G}✓${N} claude_daily_budget_sec = $secs ($(printf %s "$dur"))')
+"
+        ;;
+      model)
+        m="${2:-}"
+        case "$m" in
+          opus|sonnet|haiku)
+            python3 -c "
+import json, pathlib
+p = pathlib.Path('$CFG')
+cfg = json.loads(p.read_text()) if p.exists() else {}
+cfg['escalation_model'] = '$m'
+p.parent.mkdir(parents=True, exist_ok=True)
+p.write_text(json.dumps(cfg, indent=2))
+print('${G}✓${N} escalation_model = $m')
+"
+            ;;
+          *)
+            echo "kig budget model: pick opus, sonnet, or haiku" >&2
+            exit 1
+            ;;
+        esac
+        ;;
+      *)
+        echo "kig budget: unknown subcommand '$sub'" >&2
+        echo "try: kig budget | kig budget set <dur> | kig budget model <m>" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  escalations)
+    LOG="$HOME/.claude/hooks/state/kig-escalations.jsonl"
+    if [ ! -f "$LOG" ]; then
+      echo "${D}No escalations logged yet. Trigger one with: kig unstuck${N}"
+      exit 0
+    fi
+    echo "${B}Recent escalations:${N}"
+    tail -20 "$LOG" | python3 -c "
+import json, sys
+for line in sys.stdin:
+    try:
+        e = json.loads(line)
+        print(f\"  {e['at']}  model={e['model']:<8}  elapsed={e['elapsed_sec']}s  \" + e.get('nudge_preview', '')[:80])
+    except Exception:
+        pass
+"
     ;;
   preview)
     cwd=$(osascript <<'EOF' 2>/dev/null
