@@ -676,6 +676,16 @@ DIRECTIVES = {
         "if a branch has been open for days, it's probably drifting. check: do all changes still relate to the original Issue?",
         "re-read the Issue before committing. does your diff address what was asked? if you changed things not in the Issue, split them out.",
     ],
+    "simulator_automation": [
+        "NEED TO TAP a button in the iOS simulator? USE `navigator.py` from the ios-simulator skill: `python3 ~/.claude/skills/ios-simulator/ios-simulator-skill/scripts/navigator.py --find-text 'Button Name' --tap`",
+        "iOS simulator tap tools (in priority order): (1) ios-simulator skill's navigator.py — semantic, idb-backed (2) `idb ui tap x y` — structured (3) `cliclick c:x,y` — dumb screen click (4) Maestro flows — for multi-step tests.",
+        "for iOS simulator UI: DO NOT try System Events/osascript — iOS UI is rendered inside the Simulator window and macOS can't see its accessibility tree. Use idb instead.",
+        "`cliclick` is already installed at /opt/homebrew/bin/cliclick. `cliclick c:230,200` clicks screen coords. Last resort when semantic tools fail.",
+        "`maestro` is installed (brew install mobile-dev-inc/tap/maestro). Write flows in mobile/flows/*.yaml. Run with `maestro test mobile/flows/bake-flow.yaml`.",
+        "`idb` is installed (brew install facebook/fb/idb-companion + pipx install fb-idb). Commands: `idb ui tap`, `idb ui text`, `idb ui describe-all`. Best for structured automation.",
+        "Android emulator: use `adb shell input tap x y` for coords, or Maestro flows for semantic. Never GUI-script the emulator window.",
+        "BEFORE concluding 'I can't tap buttons in the simulator' — check if ios-simulator skill, idb, maestro, or cliclick is installed. They handle this exact problem.",
+    ],
     "stop_looping": [
         "STOP LOOPING. if a command returns empty output, that IS the answer. don't run 5 variations of the same command hoping for different results.",
         "if `git diff` returns nothing, the files are identical. accept it and move on. don't re-run with different flags.",
