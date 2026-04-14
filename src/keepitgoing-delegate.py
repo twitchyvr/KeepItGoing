@@ -50,6 +50,76 @@ WORKTREE_BASE = Path("/tmp/kig-delegate")
 DEFAULT_BUDGET_SEC = 7200  # 2 hours
 DEFAULT_MODEL = "opus"
 CLAUDE_TIMEOUT_SEC = 300  # 5 minutes — generous for a bounded task
+CLAUDE_JSON = Path.home() / ".claude.json"
+
+# Profiles mirror keepitgoing-classify.py + keepitgoing-unstuck.py.
+# MiniMax via the Anthropic-compatible endpoint uses a SEPARATE quota pool,
+# critical for weekly-cap days. Gemini could be a third fallback pool;
+# not yet wired because it needs a direct API integration path.
+PROFILES = {
+    "opus": {"model": "opus", "base_url": None, "api_key_env": None},
+    "sonnet": {"model": "sonnet", "base_url": None, "api_key_env": None},
+    "haiku": {"model": "haiku", "base_url": None, "api_key_env": None},
+    "minimax-highspeed": {
+        "model": "MiniMax-M2.7-highspeed",
+        "base_url": "https://api.minimax.io/anthropic",
+        "api_key_env": "MINIMAX_API_KEY",
+    },
+    "minimax": {
+        "model": "MiniMax-M2.7",
+        "base_url": "https://api.minimax.io/anthropic",
+        "api_key_env": "MINIMAX_API_KEY",
+    },
+}
+
+
+def resolve_profile(name):
+    if name in PROFILES:
+        return name, PROFILES[name]
+    return name, {"model": name, "base_url": None, "api_key_env": None}
+
+
+def resolve_api_key(env_var):
+    if not env_var:
+        return None
+    val = os.environ.get(env_var)
+    if val:
+        return val
+    if CLAUDE_JSON.exists():
+        try:
+            blob = CLAUDE_JSON.read_text()
+            m = re.search(rf'"{re.escape(env_var)}"\s*:\s*"([^"]+)"', blob)
+            if m:
+                return m.group(1)
+        except Exception:
+            pass
+    return None
+
+
+class RateLimitError(RuntimeError):
+    pass
+
+
+RATE_LIMIT_PATTERNS = [
+    r"rate[ _-]?limit",
+    r"usage[ _-]?limit",
+    r"weekly[ _-]?limit",
+    r"5[ _-]?hour[ _-]?limit",
+    r"subscription[ _-]?limit",
+    r"quota[ _-]?exceeded",
+    r"429",
+    r"insufficient_quota",
+    r"you'?(ve| have) used",
+    r"try again later",
+    r"reset(s|) (at|on)",
+]
+
+
+def is_rate_limit_error(text):
+    if not text:
+        return False
+    return any(re.search(p, text, re.IGNORECASE) for p in RATE_LIMIT_PATTERNS)
+
 
 DELEGATE_PROMPT = """You are being delegated a narrowly-scoped task inside an isolated git worktree. Another AI tried and got stuck; you are expected to fix this specific thing and only this thing.
 
@@ -204,10 +274,25 @@ def cleanup_worktree(repo_path, wt_path, keep=True):
 
 
 def call_opus_in_worktree(wt_path, task, model, timeout_sec):
-    """Invoke `claude -p` scoped to the worktree. Returns (output, elapsed_sec)."""
+    """Invoke `claude -p` scoped to the worktree. Returns (output, elapsed_sec).
+
+    Uses profile routing so we can switch to MiniMax (or any other
+    Anthropic-compatible provider) when Claude Code subscription is capped.
+    """
     prompt = DELEGATE_PROMPT.replace("{worktree_path}", str(wt_path)).replace(
         "{task}", task
     )
+    _, profile = resolve_profile(model)
+    env = os.environ.copy()
+    if profile.get("base_url"):
+        env["ANTHROPIC_BASE_URL"] = profile["base_url"]
+    if profile.get("api_key_env"):
+        key = resolve_api_key(profile["api_key_env"])
+        if not key:
+            raise RuntimeError(
+                f"API key for {profile['api_key_env']} not found (check ~/.claude.json)"
+            )
+        env["ANTHROPIC_API_KEY"] = key
     t0 = time.monotonic()
     try:
         result = subprocess.run(
@@ -215,7 +300,7 @@ def call_opus_in_worktree(wt_path, task, model, timeout_sec):
                 "claude",
                 "-p",
                 "--model",
-                model,
+                profile["model"],
                 "--add-dir",
                 str(wt_path),
                 "--output-format",
@@ -227,6 +312,7 @@ def call_opus_in_worktree(wt_path, task, model, timeout_sec):
             text=True,
             timeout=timeout_sec,
             cwd=str(wt_path),
+            env=env,
         )
     except FileNotFoundError:
         raise RuntimeError("`claude` CLI not found on PATH")
@@ -235,6 +321,9 @@ def call_opus_in_worktree(wt_path, task, model, timeout_sec):
         raise RuntimeError(f"delegate timed out after {elapsed}s (cap {timeout_sec}s)")
     elapsed = int(time.monotonic() - t0)
     if result.returncode != 0:
+        stderr = result.stderr[:500]
+        if is_rate_limit_error(stderr) or is_rate_limit_error(result.stdout[:500]):
+            raise RateLimitError(f"rate-limited: {stderr[:200]}")
         raise RuntimeError(f"claude exit {result.returncode}: {result.stderr[:300]}")
     return result.stdout.strip(), elapsed
 

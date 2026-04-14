@@ -48,6 +48,53 @@ DEFAULT_MODEL = "opus"
 MAX_INPUT_CHARS = 12000
 CLAUDE_TIMEOUT_SEC = 120
 
+# Profiles mirror those in keepitgoing-classify.py. MiniMax routes via the
+# Anthropic-compatible endpoint and uses a SEPARATE quota pool from Claude
+# Code's subscription — critical when Matt's weekly Claude Code limit is hit
+# (every Thursday 3pm Chicago) and Haiku/Sonnet/Opus all become unavailable.
+PROFILES = {
+    "opus": {"model": "opus", "base_url": None, "api_key_env": None},
+    "sonnet": {"model": "sonnet", "base_url": None, "api_key_env": None},
+    "haiku": {"model": "haiku", "base_url": None, "api_key_env": None},
+    "minimax-highspeed": {
+        "model": "MiniMax-M2.7-highspeed",
+        "base_url": "https://api.minimax.io/anthropic",
+        "api_key_env": "MINIMAX_API_KEY",
+    },
+    "minimax": {
+        "model": "MiniMax-M2.7",
+        "base_url": "https://api.minimax.io/anthropic",
+        "api_key_env": "MINIMAX_API_KEY",
+    },
+}
+CLAUDE_JSON = Path.home() / ".claude.json"
+
+
+def resolve_profile(name):
+    """Accept a profile name OR a bare model alias. Returns a profile dict."""
+    if name in PROFILES:
+        return name, PROFILES[name]
+    # Bare model — synthesize an Anthropic-auth profile
+    return name, {"model": name, "base_url": None, "api_key_env": None}
+
+
+def resolve_api_key(env_var):
+    if not env_var:
+        return None
+    val = os.environ.get(env_var)
+    if val:
+        return val
+    if CLAUDE_JSON.exists():
+        try:
+            blob = CLAUDE_JSON.read_text()
+            m = re.search(rf'"{re.escape(env_var)}"\s*:\s*"([^"]+)"', blob)
+            if m:
+                return m.group(1)
+        except Exception:
+            pass
+    return None
+
+
 CONSULT_PROMPT = """You are a senior engineer. A junior AI is working on a task and has a specific question. Answer it directly using the session context below.
 
 RULES:
@@ -187,14 +234,27 @@ def call_escalation(content, model, timeout_sec, image_path=None, question=None)
         prompt = UNSTUCK_PROMPT.replace("{content}", content).replace(
             "{image_section}", image_section
         )
+    # Resolve profile (string name like "opus" or "minimax-highspeed")
+    _, profile = resolve_profile(model)
+    env = os.environ.copy()
+    if profile.get("base_url"):
+        env["ANTHROPIC_BASE_URL"] = profile["base_url"]
+    if profile.get("api_key_env"):
+        key = resolve_api_key(profile["api_key_env"])
+        if not key:
+            raise RuntimeError(
+                f"API key for {profile['api_key_env']} not found (check ~/.claude.json)"
+            )
+        env["ANTHROPIC_API_KEY"] = key
     t0 = time.monotonic()
     try:
         result = subprocess.run(
-            ["claude", "-p", "--model", model, "--output-format", "text"],
+            ["claude", "-p", "--model", profile["model"], "--output-format", "text"],
             input=prompt,
             capture_output=True,
             text=True,
             timeout=timeout_sec,
+            env=env,
         )
     except FileNotFoundError:
         raise RuntimeError("`claude` CLI not found on PATH")
@@ -205,8 +265,41 @@ def call_escalation(content, model, timeout_sec, image_path=None, question=None)
         )
     elapsed = int(time.monotonic() - t0)
     if result.returncode != 0:
-        raise RuntimeError(f"claude exit {result.returncode}: {result.stderr[:200]}")
+        # Detect rate-limit / subscription-cap errors so caller can fall back
+        stderr = result.stderr[:500]
+        if is_rate_limit_error(stderr) or is_rate_limit_error(result.stdout[:500]):
+            raise RateLimitError(f"rate limit / subscription cap: {stderr[:200]}")
+        raise RuntimeError(f"claude exit {result.returncode}: {stderr[:200]}")
     return result.stdout.strip(), elapsed
+
+
+class RateLimitError(RuntimeError):
+    """Signals that the primary provider is rate-limited or subscription-capped.
+
+    Callers should fall back to a different profile (typically minimax-highspeed)
+    which routes to a separate quota pool."""
+
+
+RATE_LIMIT_PATTERNS = [
+    r"rate[ _-]?limit",
+    r"usage[ _-]?limit",
+    r"weekly[ _-]?limit",
+    r"5[ _-]?hour[ _-]?limit",
+    r"five[ _-]?hour[ _-]?limit",
+    r"subscription[ _-]?limit",
+    r"quota[ _-]?exceeded",
+    r"429",
+    r"insufficient_quota",
+    r"you'?(ve| have) used",  # "you've used X/Y requests"
+    r"try again later",
+    r"reset(s|) (at|on)",
+]
+
+
+def is_rate_limit_error(text):
+    if not text:
+        return False
+    return any(re.search(p, text, re.IGNORECASE) for p in RATE_LIMIT_PATTERNS)
 
 
 def parse_args():
@@ -280,15 +373,18 @@ def main():
     model = args.model or escalation_model()
     used, cap, remaining = budget_status()
 
-    fallback_model = load_config().get("exhaustion_fallback_model", "haiku")
+    # Fallback = MiniMax by default. This is critical: when the Claude Code
+    # subscription is capped (5-hour rolling limit OR weekly reset-Thursday-3pm-CT),
+    # all of haiku/sonnet/opus become unavailable SIMULTANEOUSLY. Only a
+    # different-provider profile (MiniMax via api.minimax.io/anthropic) works.
+    fallback_model = load_config().get("exhaustion_fallback_model", "minimax-highspeed")
+    skip_budget_decrement = False
     if not args.force and remaining <= 0:
         if fallback_model and fallback_model != model:
             log_stderr(
-                f"budget exhausted for {model}; falling back to {fallback_model} "
-                f"(cheap; doesn't consume the {model} budget)"
+                f"kig budget exhausted for {model}; falling back to {fallback_model}"
             )
             model = fallback_model
-            # Don't decrement budget for fallback calls — they're meant to be "free"
             skip_budget_decrement = True
         else:
             log_stderr(
@@ -296,8 +392,6 @@ def main():
                 f"Use --force to override, or set exhaustion_fallback_model in config."
             )
             return 1
-    else:
-        skip_budget_decrement = False
 
     raw = read_input(args)
     content = truncate(raw, args.max_chars)
@@ -327,13 +421,33 @@ def main():
                 log_stderr(f"image not found: {args.image}")
                 return 3
             image_path = str(img.resolve())
-        nudge, elapsed = call_escalation(
-            content,
-            model,
-            args.timeout,
-            image_path=image_path,
-            question=args.question,
-        )
+        try:
+            nudge, elapsed = call_escalation(
+                content,
+                model,
+                args.timeout,
+                image_path=image_path,
+                question=args.question,
+            )
+        except RateLimitError as rl:
+            # Claude Code subscription is capped (5h rolling OR weekly cap).
+            # ALL of haiku/sonnet/opus are blocked simultaneously. Only a
+            # different-provider profile (MiniMax) works. Auto-fallback.
+            if fallback_model and fallback_model != model:
+                log_stderr(
+                    f"{model} rate-limited ({rl}); retrying with {fallback_model}"
+                )
+                model = fallback_model
+                skip_budget_decrement = True
+                nudge, elapsed = call_escalation(
+                    content,
+                    model,
+                    args.timeout,
+                    image_path=image_path,
+                    question=args.question,
+                )
+            else:
+                raise
     except Exception as e:
         log_stderr(f"escalation failed: {e}")
         return 2
