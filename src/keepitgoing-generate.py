@@ -686,11 +686,11 @@ DIRECTIVES = {
         "Monitor tool streams stdout lines from a background process — better than poll loops for logs. `run_in_background: true` + Monitor = log tailing without context burn.",
     ],
     "forbidden_commands": [
-        "`rm -rf` is BLOCKED in macaron-tycoon (and many repos) via `.claude/settings.json` deny list. DO NOT retry it — use specific file paths like `rm path/to/file` or just leave untracked files alone.",
-        "If a command is DENIED by permission policy, try ONE alternative then move on. Don't read settings.json, don't grep for hooks, don't try env var tricks. The denial is intentional.",
-        "`git reset --hard` blocked at harness level → use `git checkout -B <branch> origin/<branch>`. `git push --force` blocked → use `--force-with-lease`. `rm -rf /*` blocked → use specific paths.",
-        "untracked junk files in your working tree? Run `git clean -nd` to PREVIEW (never -f), then delete specific paths with `rm path` (not `rm -rf`). Or just leave them.",
-        "when you hit a permission denial: read the deny message ONCE, pick an alternative, move on. Do NOT try variations of the same blocked pattern hoping one slips through.",
+        "destructive commands (rm -rf, git reset --hard, git push --force, git clean -f) are in the ASK list — they'll prompt Matt for approval. When you genuinely need them, call them; just don't assume approval.",
+        "`git reset --hard` at harness level is blocked; use `git checkout -B <branch> origin/<branch>`. `git push --force` unsafe; use `--force-with-lease`. These are rules of the Claude Code harness, not the project.",
+        "when you hit a permission prompt (ASK): state WHY you need it in one sentence, then proceed. When you hit a harness-level DENY (different thing): try ONE alternative then move on.",
+        "untracked junk files? `git clean -nd` to PREVIEW, then `rm path/to/file` for specific paths, or `git clean -fd` if Matt approves. Don't rm -rf directories unless you've confirmed the scope.",
+        "don't loop on blocked commands. If something is truly harness-denied, ONE alternative then move on — don't read settings, grep for hooks, or try env var tricks.",
     ],
     "self_rescue": [
         'THREE-TIER ESCALATION when stuck. TIER 1 (consult): `kig ask "your specific question"` — Opus answers, you stay in control. TIER 2 (nudge): `kig unstuck` — Opus picks the focus, returns a directive. TIER 3 (delegate): `kig delegate "narrow task"` — Opus actually edits code in an isolated worktree, you review the diff. Start cheap, escalate only if needed.',
