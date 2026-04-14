@@ -759,7 +759,38 @@ on idle
 		my shellCmd("cd /tmp/claude-keepitgoing && { [ -f app.log ] && [ $(wc -c < app.log) -gt 512000 ] && mv app.log app.$(date +%Y-%m-%d-%H%M%S).log; find . -name 'app.*.log' -mtime +3 -delete; } 2>/dev/null; true")
 		set stateRecords to my readStateFiles()
 		set now to iterStart
-		
+
+		-- ── GLOBAL CONTROL LOCKFILES (managed by `kig` CLI) ─────────────
+		-- pause.lock        → skip all firing until removed
+		-- snooze-until.txt  → skip until the contained epoch time
+		-- fire-now.lock     → override cooldown once, then auto-clear
+		-- cancel-next.lock  → skip ONE upcoming fire, then auto-clear
+		set kigPaused to false
+		try
+			set kigPaused to (my shellCmd("test -f /tmp/claude-keepitgoing/pause.lock && echo yes || echo no")) is "yes"
+		end try
+		if kigPaused then
+			my logLine("[kig] paused (pause.lock) — skipping poll")
+			return pollInterval
+		end if
+		set kigSnoozed to false
+		try
+			set snoozeContent to my shellCmd("cat /tmp/claude-keepitgoing/snooze-until.txt 2>/dev/null || echo 0")
+			set snoozeUntil to snoozeContent as integer
+			set nowEpoch to (my shellCmd("date +%s")) as integer
+			if snoozeUntil > nowEpoch then
+				set kigSnoozed to true
+				my logLine("[kig] snoozed " & ((snoozeUntil - nowEpoch) as string) & "s remaining")
+			else if snoozeUntil > 0 then
+				my shellCmd("rm -f /tmp/claude-keepitgoing/snooze-until.txt")
+			end if
+		end try
+		if kigSnoozed then return pollInterval
+		set kigFireNow to false
+		try
+			set kigFireNow to (my shellCmd("test -f /tmp/claude-keepitgoing/fire-now.lock && echo yes || echo no")) is "yes"
+		end try
+
 		-- Collect session references in one pass inside a bounded iTerm tell,
 		-- then release the iTerm event queue before doing any per-session work.
 		-- This minimizes the time iTerm spends blocked on Apple Events, which
@@ -1000,7 +1031,17 @@ on idle
 							end if
 							set timeSince to my getTimeSinceLastSend(sessionKey)
 							set requiredDelay to my cooldownForMode(sendMode)
-							if timeSince ≤ requiredDelay then
+							-- Fire-now lock from `kig fire` skips cooldown once.
+							if kigFireNow then
+								my shellCmd("rm -f /tmp/claude-keepitgoing/fire-now.lock")
+								my logLine("[kig] fire-now — bypassing cooldown")
+							end if
+							if (not kigFireNow) and timeSince ≤ requiredDelay then
+								set remainingCooldown to (requiredDelay - timeSince)
+								if remainingCooldown < 0 then set remainingCooldown to 0
+								try
+									my shellCmd("printf '{\"mode\":\"" & sendMode & "\",\"cwd\":\"" & sessionCwd & "\",\"remaining\":" & (remainingCooldown as string) & ",\"required\":" & (requiredDelay as string) & ",\"written_at\":'$(date +%s)'}' > /tmp/claude-keepitgoing/next-fire.json")
+								end try
 								my logLine("[kig] bailout cooldown | mode=" & sendMode & " | cwd=" & sessionCwd & " | timeSince=" & (timeSince as string) & " | required=" & (requiredDelay as string))
 							else
 								-- When a background shell is running, send a light
@@ -1028,17 +1069,37 @@ on idle
 									set thePrompt to item (random number from 1 to count of statusChecks) of statusChecks
 								else if not isCompactionRefresh then
 									set thePrompt to my generatePrompt(sessionCwd)
+									-- Override from `kig edit`: if override-prompt.txt is non-empty, use it instead
+									try
+										set overridePath to "/tmp/claude-keepitgoing/override-prompt.txt"
+										set overrideContent to my shellCmd("[ -s " & overridePath & " ] && cat " & overridePath & " || echo")
+										if (count of characters of overrideContent) > 10 then
+											set thePrompt to overrideContent
+											my shellCmd("rm -f " & overridePath)
+											my logLine("[kig] override prompt used (from kig edit) — cleared")
+										end if
+									end try
 								end if
 								if (count of characters of thePrompt) < 20 then
 									my logLine("[kig] bailout short prompt | cwd=" & sessionCwd & " | len=" & ((count of characters of thePrompt) as string))
 								else
-									if my sendPromptToSession(s, thePrompt) then
-										my recordSendTime(sessionKey)
-										my logLine("[KeepItGoing] prompt sent | mode=" & sendMode & " | cwd=" & sessionCwd & " | idleDur=" & (idleDur as string) & "s | prompt=" & my sanitizeForLog(thePrompt))
+									-- cancel-next lock from `kig cancel` skips ONE fire then auto-clears
+									set kigCancelNext to false
+									try
+										set kigCancelNext to (my shellCmd("test -f /tmp/claude-keepitgoing/cancel-next.lock && echo yes || echo no")) is "yes"
+									end try
+									if kigCancelNext then
+										my shellCmd("rm -f /tmp/claude-keepitgoing/cancel-next.lock")
+										my logLine("[kig] cancel-next — skipping this fire (prompt=" & my sanitizeForLog(thePrompt) & ")")
 									else
-										my logLine("[kig] bailout send failed | cwd=" & sessionCwd)
+										if my sendPromptToSession(s, thePrompt) then
+											my recordSendTime(sessionKey)
+											my logLine("[KeepItGoing] prompt sent | mode=" & sendMode & " | cwd=" & sessionCwd & " | idleDur=" & (idleDur as string) & "s | prompt=" & my sanitizeForLog(thePrompt))
+										else
+											my logLine("[kig] bailout send failed | cwd=" & sessionCwd)
+										end if
 									end if
-								end if
+									end if
 							end if
 						end if
 					end if -- end of if fetchOk

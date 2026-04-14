@@ -1,62 +1,323 @@
 #!/bin/bash
-# kig — toggle KeepItGoing on/off for the current iTerm session.
-#
-# Sets an iTerm User Variable named "user.keepitgoing" on the session
-# you run this from. The KeepItGoing applet reads that variable on every
-# poll and skips sessions where it's "off". The variable is per-session
-# and persists for the lifetime of that iTerm session — it survives
-# Claude Code's title rewrites, cwd changes, and tab moves.
+# kig — control KeepItGoing from the command line.
 #
 # Usage:
-#   kig            show this help
-#   kig on         enable KeepItGoing for THIS tab (the default)
-#   kig off        disable KeepItGoing for THIS tab
-#   kig status     show the current state of THIS tab
-#   kig list       show every iTerm Claude tab and its kig state
+#   kig                    show status: countdown to next fire + per-tab state
+#   kig status             same as above
+#   kig on | off           enable/disable KeepItGoing for THIS iTerm tab
+#   kig pause              pause ALL firing globally until `kig resume`
+#   kig resume             resume after pause
+#   kig cancel             cancel ONLY the next scheduled fire (one-shot)
+#   kig snooze <duration>  delay next fire by duration (e.g. 5m, 10min, 1h, 30s)
+#   kig fire               fire immediately, bypassing cooldown (one-shot)
+#   kig edit               open override-prompt.txt in $EDITOR — next fire uses this verbatim
+#   kig preview            show what prompt the generator would produce right now (no fire)
+#   kig watch              live countdown display, refreshing every second
+#   kig list               show every Claude tab's on/off state
+#   kig log                tail the KIG log
+#   kig help               show this help
 #
-# Run it from inside the tab you want to toggle. The escape sequence
-# only affects the session it's printed to.
+# State files (in /tmp/claude-keepitgoing/):
+#   pause.lock        present ⇒ globally paused
+#   cancel-next.lock  present ⇒ skip ONE upcoming fire, then auto-clear
+#   snooze-until.txt  contains epoch seconds ⇒ no firing before that time
+#   fire-now.lock     present ⇒ fire immediately on next poll, auto-clear
+#
+# The AppleScript applet checks these at the top of each poll iteration.
 
 set -euo pipefail
 
-# Print iTerm OSC 1337 SetUserVar escape sequence.
-# Format: ESC ] 1337 ; SetUserVar = NAME = BASE64_VALUE BEL
-set_var() {
+STATE_DIR="/tmp/claude-keepitgoing"
+LOG_FILE="$STATE_DIR/app.log"
+PAUSE_LOCK="$STATE_DIR/pause.lock"
+CANCEL_LOCK="$STATE_DIR/cancel-next.lock"
+SNOOZE_FILE="$STATE_DIR/snooze-until.txt"
+FIRE_LOCK="$STATE_DIR/fire-now.lock"
+
+mkdir -p "$STATE_DIR"
+
+# Colors (only if stdout is a tty)
+if [ -t 1 ]; then
+  R=$'\033[0;31m'; G=$'\033[0;32m'; Y=$'\033[0;33m'; B=$'\033[0;34m'; D=$'\033[2m'; N=$'\033[0m'
+else
+  R=""; G=""; Y=""; B=""; D=""; N=""
+fi
+
+# Parse durations like "5m", "30s", "1h", "90", "10min" → seconds
+parse_duration() {
+  local d="$1"
+  if [[ "$d" =~ ^([0-9]+)(s|sec|secs|second|seconds)?$ ]]; then
+    echo "${BASH_REMATCH[1]}"
+  elif [[ "$d" =~ ^([0-9]+)(m|min|mins|minute|minutes)$ ]]; then
+    echo $((BASH_REMATCH[1] * 60))
+  elif [[ "$d" =~ ^([0-9]+)(h|hr|hrs|hour|hours)$ ]]; then
+    echo $((BASH_REMATCH[1] * 3600))
+  else
+    echo "kig: can't parse duration '$d' (try 30s, 5m, 1h)" >&2
+    exit 1
+  fi
+}
+
+# Format seconds as "Mm SSs" or "HHh MMm"
+fmt_duration() {
+  local s="$1"
+  if [ "$s" -lt 60 ]; then printf '%ds' "$s"
+  elif [ "$s" -lt 3600 ]; then printf '%dm %02ds' $((s / 60)) $((s % 60))
+  else printf '%dh %02dm' $((s / 3600)) $(((s % 3600) / 60))
+  fi
+}
+
+# Read last bailout/sent line from log → compute countdown
+# Returns "ready|cooldown|sent" on stdout, plus details
+compute_countdown() {
+  if [ ! -f "$LOG_FILE" ]; then
+    echo "nolog"
+    return
+  fi
+  # Look at last ~5 lines for the most recent cooldown report OR send event
+  local recent
+  recent=$(tail -10 "$LOG_FILE" 2>/dev/null)
+  # Match: "bailout cooldown | mode=X | cwd=Y | timeSince=N.N | required=M"
+  # or:    "KeepItGoing] prompt sent | mode=X | ... idleDur=Ns"
+  local last_line
+  last_line=$(echo "$recent" | grep -E "bailout cooldown|prompt sent" | tail -1)
+  if [ -z "$last_line" ]; then
+    echo "unknown"
+    return
+  fi
+  if echo "$last_line" | grep -q "prompt sent"; then
+    # Just sent — figure out when, compute elapsed since
+    local sent_ts
+    sent_ts=$(echo "$last_line" | sed -n 's/^\[\([0-9: -]*\)\].*/\1/p')
+    echo "sent|$sent_ts"
+    return
+  fi
+  # bailout cooldown case
+  local time_since required mode
+  time_since=$(echo "$last_line" | sed -n 's/.*timeSince=\([0-9.]*\).*/\1/p')
+  required=$(echo "$last_line" | sed -n 's/.*required=\([0-9.]*\).*/\1/p')
+  mode=$(echo "$last_line" | sed -n 's/.*mode=\([a-z]*\).*/\1/p')
+  if [ -z "$time_since" ] || [ -z "$required" ]; then
+    echo "unknown"
+    return
+  fi
+  local log_ts log_epoch now_epoch poll_elapsed
+  log_ts=$(echo "$last_line" | sed -n 's/^\[\([0-9: -]*\)\].*/\1/p')
+  log_epoch=$(date -j -f "%Y-%m-%d %H:%M:%S" "$log_ts" +%s 2>/dev/null || echo 0)
+  now_epoch=$(date +%s)
+  poll_elapsed=$((now_epoch - log_epoch))
+  # remaining = required - (timeSince + elapsed-since-log)
+  local time_since_int remaining
+  time_since_int=${time_since%.*}
+  remaining=$(awk "BEGIN { r = $required - ($time_since_int + $poll_elapsed); printf \"%d\", (r < 0 ? 0 : r) }")
+  echo "cooldown|$remaining|$required|$mode"
+}
+
+# Check state file conditions
+get_control_state() {
+  if [ -f "$PAUSE_LOCK" ]; then echo "paused"; return; fi
+  if [ -f "$FIRE_LOCK" ]; then echo "firing_now"; return; fi
+  if [ -f "$SNOOZE_FILE" ]; then
+    local until_epoch now_epoch
+    until_epoch=$(cat "$SNOOZE_FILE" 2>/dev/null)
+    now_epoch=$(date +%s)
+    if [ -n "$until_epoch" ] && [ "$until_epoch" -gt "$now_epoch" ]; then
+      echo "snoozed|$((until_epoch - now_epoch))"
+      return
+    else
+      # Expired snooze
+      rm -f "$SNOOZE_FILE"
+    fi
+  fi
+  if [ -f "$CANCEL_LOCK" ]; then echo "cancel_next"; return; fi
+  echo "active"
+}
+
+# iTerm per-tab state (from original kig)
+set_tab_var() {
   local name="$1" value="$2"
   local b64
   b64=$(printf '%s' "$value" | base64 | tr -d '\n')
   printf '\e]1337;SetUserVar=%s=%s\a' "$name" "$b64"
 }
 
-cmd="${1:-help}"
-
-case "$cmd" in
-  on)
-    set_var keepitgoing on
-    echo "kig: ON for this tab — KeepItGoing will nudge it when idle"
-    ;;
-  off)
-    set_var keepitgoing off
-    echo "kig: OFF for this tab — KeepItGoing will leave it alone"
-    ;;
-  status)
-    # Read back the variable from iTerm via AppleScript on the focused session.
-    state=$(osascript <<'EOF' 2>/dev/null
+tab_status() {
+  osascript <<'EOF' 2>/dev/null
 tell application "iTerm"
   try
     set v to variable named "user.keepitgoing" of current session of current tab of current window
-    if v is "" then
-      return "on (default)"
-    else
-      return v
-    end if
+    if v is "" then return "on (default)"
+    return v
   on error
     return "on (default)"
   end try
 end tell
 EOF
+}
+
+print_status() {
+  echo "${B}KeepItGoing status${N}"
+  echo ""
+  # Process
+  if pgrep -fq "KeepItGoing-ClaudeChat"; then
+    echo "  ${G}✓${N} applet running"
+  else
+    echo "  ${R}✗${N} applet NOT running  ${D}(run: open ~/GitRepos/KeepItGoing/dist/KeepItGoing-ClaudeChat.app)${N}"
+  fi
+
+  # Control state
+  local ctrl; ctrl=$(get_control_state)
+  case "$ctrl" in
+    paused)
+      echo "  ${Y}⏸${N}  globally PAUSED  ${D}(kig resume to continue)${N}" ;;
+    firing_now)
+      echo "  ${B}⚡${N} fire-now lock set — will fire on next poll" ;;
+    snoozed*)
+      local snz_left=${ctrl#snoozed|}
+      echo "  ${Y}💤${N} snoozed for $(fmt_duration "$snz_left") more  ${D}(kig resume to clear)${N}" ;;
+    cancel_next)
+      echo "  ${Y}⊘${N}  next fire will be cancelled (one-shot)" ;;
+    active)
+      echo "  ${G}●${N} active" ;;
+  esac
+
+  # Countdown
+  local cd; cd=$(compute_countdown)
+  case "$cd" in
+    nolog)
+      echo "  ${D}no log yet${N}" ;;
+    unknown)
+      echo "  ${D}countdown: unknown (no recent cooldown/send in log)${N}" ;;
+    sent*)
+      local sent_ts=${cd#sent|}
+      echo "  last fire: ${G}$sent_ts${N}" ;;
+    cooldown*)
+      IFS='|' read -r _ remaining required mode <<< "$cd"
+      if [ "$remaining" -le 0 ]; then
+        echo "  ${G}→ ready to fire any tick now${N}  ${D}(mode=$mode, cooldown=$(fmt_duration "$required"))${N}"
+      else
+        echo "  ${B}⏱${N}  next fire in ~$(fmt_duration "$remaining")  ${D}(mode=$mode, cooldown=$(fmt_duration "$required"))${N}"
+      fi ;;
+  esac
+
+  # This tab
+  local ts; ts=$(tab_status 2>/dev/null || echo "unknown")
+  echo "  this tab: $ts"
+  echo ""
+  echo "${D}commands: pause resume cancel snooze <dur> fire watch list log on off${N}"
+}
+
+cmd="${1:-status}"
+
+case "$cmd" in
+  "" | status)
+    print_status
+    ;;
+  watch)
+    while true; do
+      clear
+      print_status
+      echo ""
+      echo "${D}Ctrl+C to exit${N}"
+      sleep 1
+    done
+    ;;
+  pause)
+    touch "$PAUSE_LOCK"
+    rm -f "$FIRE_LOCK"
+    echo "${Y}⏸  KeepItGoing PAUSED${N} globally. All sessions will be skipped until 'kig resume'."
+    ;;
+  resume | unpause)
+    rm -f "$PAUSE_LOCK" "$SNOOZE_FILE" "$CANCEL_LOCK"
+    echo "${G}▶  KeepItGoing resumed.${N}"
+    ;;
+  cancel)
+    touch "$CANCEL_LOCK"
+    echo "${Y}⊘  Next fire will be cancelled.${N} (one-shot; normal cadence resumes after)"
+    ;;
+  snooze)
+    shift
+    dur="${1:-}"
+    if [ -z "$dur" ]; then
+      echo "usage: kig snooze <duration>  (e.g. 5m, 30s, 1h)" >&2
+      exit 1
+    fi
+    secs=$(parse_duration "$dur")
+    until_epoch=$(($(date +%s) + secs))
+    echo "$until_epoch" > "$SNOOZE_FILE"
+    rm -f "$FIRE_LOCK"
+    echo "${Y}💤 Snoozed for $(fmt_duration "$secs").${N} Will auto-resume at $(date -r "$until_epoch" '+%H:%M:%S')."
+    ;;
+  fire | now)
+    touch "$FIRE_LOCK"
+    rm -f "$PAUSE_LOCK" "$CANCEL_LOCK" "$SNOOZE_FILE"
+    echo "${B}⚡ Will fire on next poll${N} (within ~30s)."
+    ;;
+  edit)
+    OVERRIDE_FILE="$STATE_DIR/override-prompt.txt"
+    # Seed with current pending (preview) if empty
+    if [ ! -s "$OVERRIDE_FILE" ]; then
+      # Try to generate a preview of what would fire next
+      cwd=$(osascript <<'EOF' 2>/dev/null
+tell application "iTerm"
+  tell current session of current tab of current window
+    try
+      return variable "session.path"
+    on error
+      return ""
+    end try
+  end tell
+end tell
+EOF
 )
-    echo "kig: this tab is $state"
+      if [ -n "$cwd" ]; then
+        python3 ~/.claude/hooks/scripts/keepitgoing-generate.py --cwd "$cwd" 2>/dev/null > "$OVERRIDE_FILE" || true
+      fi
+      echo "# Edit the prompt below — it will be sent verbatim on the next KIG fire." > "$OVERRIDE_FILE.hdr"
+      echo "# Leave empty or delete the file to cancel the override." >> "$OVERRIDE_FILE.hdr"
+      echo "" >> "$OVERRIDE_FILE.hdr"
+      cat "$OVERRIDE_FILE" >> "$OVERRIDE_FILE.hdr" 2>/dev/null || true
+      mv "$OVERRIDE_FILE.hdr" "$OVERRIDE_FILE"
+    fi
+    "${EDITOR:-nano}" "$OVERRIDE_FILE"
+    # Strip comment lines starting with #
+    if [ -f "$OVERRIDE_FILE" ]; then
+      grep -v '^#' "$OVERRIDE_FILE" > "$OVERRIDE_FILE.tmp" && mv "$OVERRIDE_FILE.tmp" "$OVERRIDE_FILE"
+      if [ -s "$OVERRIDE_FILE" ]; then
+        echo "${G}✓${N} Override queued. Next fire will use this prompt."
+        echo "${D}Preview (first 200 chars):${N}"
+        head -c 200 "$OVERRIDE_FILE"; echo
+      else
+        rm -f "$OVERRIDE_FILE"
+        echo "${Y}⊘${N} Override file empty — no override queued."
+      fi
+    fi
+    ;;
+  preview)
+    cwd=$(osascript <<'EOF' 2>/dev/null
+tell application "iTerm"
+  tell current session of current tab of current window
+    try
+      return variable "session.path"
+    on error
+      return ""
+    end try
+  end tell
+end tell
+EOF
+)
+    if [ -z "$cwd" ]; then cwd="$HOME"; fi
+    echo "${D}cwd: $cwd${N}"
+    echo "${B}Preview of next-generated prompt:${N}"
+    python3 ~/.claude/hooks/scripts/keepitgoing-generate.py --cwd "$cwd" 2>&1
+    ;;
+  on)
+    set_tab_var keepitgoing on
+    echo "kig: ON for this tab"
+    ;;
+  off)
+    set_tab_var keepitgoing off
+    echo "kig: OFF for this tab"
     ;;
   list)
     osascript <<'EOF' 2>/dev/null
@@ -82,8 +343,11 @@ tell application "iTerm"
 end tell
 EOF
     ;;
-  help|--help|-h|"")
-    sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+  log | tail)
+    exec tail -f "$LOG_FILE"
+    ;;
+  help | --help | -h)
+    sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
     ;;
   *)
     echo "kig: unknown command '$cmd'" >&2
