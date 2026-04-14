@@ -280,12 +280,24 @@ def main():
     model = args.model or escalation_model()
     used, cap, remaining = budget_status()
 
+    fallback_model = load_config().get("exhaustion_fallback_model", "haiku")
     if not args.force and remaining <= 0:
-        log_stderr(
-            f"budget exhausted: used {fmt_duration(used)} / cap {fmt_duration(cap)}. "
-            f"Use --force to override, or adjust with `kig budget set <duration>`."
-        )
-        return 1
+        if fallback_model and fallback_model != model:
+            log_stderr(
+                f"budget exhausted for {model}; falling back to {fallback_model} "
+                f"(cheap; doesn't consume the {model} budget)"
+            )
+            model = fallback_model
+            # Don't decrement budget for fallback calls — they're meant to be "free"
+            skip_budget_decrement = True
+        else:
+            log_stderr(
+                f"budget exhausted: used {fmt_duration(used)} / cap {fmt_duration(cap)}. "
+                f"Use --force to override, or set exhaustion_fallback_model in config."
+            )
+            return 1
+    else:
+        skip_budget_decrement = False
 
     raw = read_input(args)
     content = truncate(raw, args.max_chars)
@@ -330,10 +342,14 @@ def main():
         log_stderr(f"escalation returned nothing useful ({len(nudge)} chars)")
         return 2
 
-    # Decrement budget
+    # Decrement budget (unless we fell back to the exhaustion fallback model,
+    # which is intentionally "free" — cheap enough that tracking is noise)
     today = load_today_budget()
-    today["used_sec"] = int(today.get("used_sec", 0)) + elapsed
+    if not skip_budget_decrement:
+        today["used_sec"] = int(today.get("used_sec", 0)) + elapsed
     today["escalations"] = int(today.get("escalations", 0)) + 1
+    if skip_budget_decrement:
+        today["fallback_calls"] = int(today.get("fallback_calls", 0)) + 1
     save_today_budget(today)
 
     # Log the escalation for auditability

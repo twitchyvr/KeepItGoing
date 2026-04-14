@@ -476,6 +476,7 @@ EOF
     # Parse optional shot flags
     SHOT_ARG=""
     TMP_SHOT=""
+    declare -a EXTRA_ARGS
     EXTRA_ARGS=()
     while [ $# -gt 0 ]; do
       case "$1" in
@@ -518,8 +519,13 @@ EOF
     mv "$TMP_CTX.trim" "$TMP_CTX"
     echo "${D}Asking Claude (context: $(wc -l < "$TMP_CTX") lines)...${N}" >&2
     # shellcheck disable=SC2086
-    python3 "$HOME/.claude/hooks/scripts/keepitgoing-unstuck.py" \
-        --input-file "$TMP_CTX" --question "$QUESTION" $SHOT_ARG "${EXTRA_ARGS[@]}"
+    if [ ${#EXTRA_ARGS[@]} -gt 0 ]; then
+      python3 "$HOME/.claude/hooks/scripts/keepitgoing-unstuck.py" \
+          --input-file "$TMP_CTX" --question "$QUESTION" $SHOT_ARG "${EXTRA_ARGS[@]}"
+    else
+      python3 "$HOME/.claude/hooks/scripts/keepitgoing-unstuck.py" \
+          --input-file "$TMP_CTX" --question "$QUESTION" $SHOT_ARG
+    fi
     status=$?
     rm -f "$TMP_CTX"
     [ -n "$TMP_SHOT" ] && echo "${D}Screenshot preserved at: $TMP_SHOT${N}" >&2
@@ -528,6 +534,7 @@ EOF
   delegate)
     shift
     TASK=""
+    declare -a EXTRA_ARGS
     EXTRA_ARGS=()
     while [ $# -gt 0 ]; do
       case "$1" in
@@ -541,18 +548,24 @@ EOF
       esac
     done
     if [ -z "$TASK" ]; then
-      # Allow --budget without a task
-      for a in "${EXTRA_ARGS[@]}"; do
-        if [ "$a" = "--budget" ]; then
-          python3 "$HOME/.claude/hooks/scripts/keepitgoing-delegate.py" --budget
-          exit 0
-        fi
-      done
+      # Allow --budget without a task. Safe iteration over possibly-empty array.
+      if [ ${#EXTRA_ARGS[@]} -gt 0 ]; then
+        for a in "${EXTRA_ARGS[@]}"; do
+          if [ "$a" = "--budget" ]; then
+            python3 "$HOME/.claude/hooks/scripts/keepitgoing-delegate.py" --budget
+            exit 0
+          fi
+        done
+      fi
       echo "usage: kig delegate \"narrow task description\" [--dry-run] [--model sonnet] [--repo /path]" >&2
       echo "       kig delegate --budget" >&2
       exit 1
     fi
-    python3 "$HOME/.claude/hooks/scripts/keepitgoing-delegate.py" "$TASK" "${EXTRA_ARGS[@]}"
+    if [ ${#EXTRA_ARGS[@]} -gt 0 ]; then
+      python3 "$HOME/.claude/hooks/scripts/keepitgoing-delegate.py" "$TASK" "${EXTRA_ARGS[@]}"
+    else
+      python3 "$HOME/.claude/hooks/scripts/keepitgoing-delegate.py" "$TASK"
+    fi
     exit $?
     ;;
   budget)
