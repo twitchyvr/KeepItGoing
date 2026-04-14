@@ -676,6 +676,22 @@ DIRECTIVES = {
         "if a branch has been open for days, it's probably drifting. check: do all changes still relate to the original Issue?",
         "re-read the Issue before committing. does your diff address what was asked? if you changed things not in the Issue, split them out.",
     ],
+    "polling_efficiency": [
+        "POLLING CI or a long build? USE `/loop` with a dynamic interval — type `/loop monitor <thing> every 3 minutes` in THIS session. It self-paces, wakes on change, doesn't burn cache with manual `sleep && poll` loops.",
+        "DON'T use `sleep N && cmd` for polling — the harness blocks sleep ≥ 2s as a first command. USE `Bash(run_in_background: true)` for long-running shells + get notified when they complete. Or use `/loop`.",
+        "polling pattern detected — you're running the same gh/git command every 30-60s. STOP. Type `/loop` to enable dynamic pacing + ScheduleWakeup. Cheaper, faster, doesn't tire you out.",
+        "`/loop monitor CI run <id> poll every 3 min` is the clean pattern. You type it, harness enables ScheduleWakeup, the session sleeps between checks instead of holding the prompt open.",
+        "waiting on external events (CI, build, test) = `/loop` territory. Waiting on user = just stop and wait. Don't confuse the two.",
+        "ScheduleWakeup only works inside /loop dynamic mode. If you see 'wakeup not scheduled' — that's the signal to type `/loop` first.",
+        "Monitor tool streams stdout lines from a background process — better than poll loops for logs. `run_in_background: true` + Monitor = log tailing without context burn.",
+    ],
+    "forbidden_commands": [
+        "`rm -rf` is BLOCKED in macaron-tycoon (and many repos) via `.claude/settings.json` deny list. DO NOT retry it — use specific file paths like `rm path/to/file` or just leave untracked files alone.",
+        "If a command is DENIED by permission policy, try ONE alternative then move on. Don't read settings.json, don't grep for hooks, don't try env var tricks. The denial is intentional.",
+        "`git reset --hard` blocked at harness level → use `git checkout -B <branch> origin/<branch>`. `git push --force` blocked → use `--force-with-lease`. `rm -rf /*` blocked → use specific paths.",
+        "untracked junk files in your working tree? Run `git clean -nd` to PREVIEW (never -f), then delete specific paths with `rm path` (not `rm -rf`). Or just leave them.",
+        "when you hit a permission denial: read the deny message ONCE, pick an alternative, move on. Do NOT try variations of the same blocked pattern hoping one slips through.",
+    ],
     "self_rescue": [
         'THREE-TIER ESCALATION when stuck. TIER 1 (consult): `kig ask "your specific question"` — Opus answers, you stay in control. TIER 2 (nudge): `kig unstuck` — Opus picks the focus, returns a directive. TIER 3 (delegate): `kig delegate "narrow task"` — Opus actually edits code in an isolated worktree, you review the diff. Start cheap, escalate only if needed.',
         'ASK before delegating. If you know WHAT you don\'t understand, use `kig ask "why does X?"`. Opus answers, you fix it yourself. Only `kig delegate "task"` when advice isn\'t enough and you genuinely need Opus to do the work.',
@@ -2081,6 +2097,8 @@ def pick_n_categories(n, proj_ctx=None):
 
     critical = [
         "self_rescue",
+        "polling_efficiency",
+        "forbidden_commands",
         "visual_verification",
         "ux_coherence",
         "stop_asking_approval",
