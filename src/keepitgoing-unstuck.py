@@ -48,6 +48,26 @@ DEFAULT_MODEL = "opus"
 MAX_INPUT_CHARS = 12000
 CLAUDE_TIMEOUT_SEC = 120
 
+CONSULT_PROMPT = """You are a senior engineer. A junior AI is working on a task and has a specific question. Answer it directly using the session context below.
+
+RULES:
+1. Answer the QUESTION asked. Do not restate it. Do not preface with "Great question" or "It seems you're asking".
+2. Be SPECIFIC and rooted in the context — cite actual file names, function names, error messages visible in the session.
+3. If the question is based on a wrong premise, say so in one sentence and correct the premise before answering.
+4. Maximum 6 sentences OR a short numbered list.
+5. If the answer requires information not visible in the context, say "need: X" in one line and stop.
+6. No markdown fences, no JSON wrapper. Plain text that a junior AI can read and act on.
+7. If a screenshot path is provided, USE YOUR Read TOOL on that path to see the image before answering.
+
+Junior AI's question:
+{question}
+
+Session context (last chunk of its work):
+---
+{content}
+---{image_section}"""
+
+
 UNSTUCK_PROMPT = """You are a senior engineer asked to help unstick a junior AI that has been working on a problem and appears to be looping or making no forward progress.
 
 Below is the last chunk of the junior AI's session (its thinking, commands, tool results, errors). Read it, identify the core blocker, and reply with a TIGHT strategic nudge that the junior AI can act on directly.
@@ -142,24 +162,31 @@ def truncate(text, n):
     return "...[truncated head]...\n" + text[-n:]
 
 
-def call_escalation(content, model, timeout_sec, image_path=None):
-    """Invoke `claude -p --model <model>` with the unstuck prompt. Returns stdout.
+def call_escalation(content, model, timeout_sec, image_path=None, question=None):
+    """Invoke `claude -p --model <model>`. Returns stdout.
 
-    If image_path is provided, the prompt includes an instruction for Claude to
-    Read() the image at that path — Claude Code's agent mode can resolve local
-    file paths referenced in prompts.
+    Mode is picked by whether a question is provided:
+      - question=None → UNSTUCK mode (strategic nudge, picks its own focus)
+      - question set  → CONSULT mode (answers the specific question)
     """
     image_section = ""
     if image_path:
         image_section = (
             f"\n\nA current screenshot has been captured at: {image_path}\n"
             f"Use your Read tool on this exact path to see the image. "
-            f"Base part of your directive on what you actually observe in it "
-            f"(layout, errors visible on screen, simulator state, etc.)."
+            f"Factor what you observe in it (layout, errors visible on screen, "
+            f"simulator state, etc.) into your response."
         )
-    prompt = UNSTUCK_PROMPT.replace("{content}", content).replace(
-        "{image_section}", image_section
-    )
+    if question:
+        prompt = (
+            CONSULT_PROMPT.replace("{question}", question.strip())
+            .replace("{content}", content)
+            .replace("{image_section}", image_section)
+        )
+    else:
+        prompt = UNSTUCK_PROMPT.replace("{content}", content).replace(
+            "{image_section}", image_section
+        )
     t0 = time.monotonic()
     try:
         result = subprocess.run(
@@ -224,6 +251,12 @@ def parse_args():
         help="Path to a screenshot PNG — Claude will Read it and factor the visual into the nudge",
     )
     p.add_argument(
+        "--question",
+        default=None,
+        help="If set, switches to CONSULT mode — answers this specific question using session context "
+        "(no strategic-nudge framing). Use when MiniMax knows what it needs to ask.",
+    )
+    p.add_argument(
         "--version", action="version", version=f"keepitgoing-unstuck {VERSION}"
     )
     return p.parse_args()
@@ -283,7 +316,11 @@ def main():
                 return 3
             image_path = str(img.resolve())
         nudge, elapsed = call_escalation(
-            content, model, args.timeout, image_path=image_path
+            content,
+            model,
+            args.timeout,
+            image_path=image_path,
+            question=args.question,
         )
     except Exception as e:
         log_stderr(f"escalation failed: {e}")

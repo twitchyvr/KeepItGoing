@@ -15,12 +15,20 @@
 #   kig model              show current classifier model
 #   kig model <profile>    switch classifier profile (haiku|sonnet|opus|minimax-highspeed|minimax)
 #   kig model list         list all profiles
-#   kig unstuck            escalate the focused Claude tab's stuck session to Opus (or configured model)
+#   — tier 1: nudge —
+#   kig unstuck            strategic directive from Opus; auto-picks the focus from session context
 #   kig unstuck --dry-run  show what context would be sent without actually calling Opus
 #   kig unstuck --shot-sim    include a booted-simulator screenshot so Opus can see the UI
 #   kig unstuck --shot-screen include a full-desktop screenshot
 #   kig unstuck --shot-select include an interactive region capture
 #   kig unstuck --shot <path> include an existing PNG screenshot
+#
+#   — tier 2: consult —
+#   kig ask "question"     send a specific question to Opus with session context; advice only
+#
+#   — tier 3: delegate (scoped execution) —
+#   kig delegate "task"    Opus runs in an isolated worktree + edits code; you review the diff
+#   kig delegate --dry-run show worktree path + plan without calling Opus
 #   kig budget             show today's Claude escalation budget (wall-clock time used)
 #   kig budget set <dur>   set the daily escalation budget (e.g. 4h, 6h, 30m)
 #   kig budget model <m>   set the escalation model (opus|sonnet|haiku)
@@ -456,6 +464,96 @@ EOF
     # Keep the shot on disk so the user can re-view it; will be cleaned by devclean
     [ -n "$TMP_SHOT" ] && echo "${D}Screenshot preserved at: $TMP_SHOT${N}"
     exit "$status"
+    ;;
+  ask)
+    shift
+    QUESTION="${1:-}"
+    if [ -z "$QUESTION" ]; then
+      echo "usage: kig ask \"your specific question\" [--shot-sim|--shot-screen|--shot /path]" >&2
+      exit 1
+    fi
+    shift
+    # Parse optional shot flags
+    SHOT_ARG=""
+    TMP_SHOT=""
+    EXTRA_ARGS=()
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --shot-sim)
+          TMP_SHOT="$STATE_DIR/ask-shot-$(date +%s).png"
+          xcrun simctl io booted screenshot "$TMP_SHOT" 2>/dev/null && [ -s "$TMP_SHOT" ] \
+            && SHOT_ARG="--image $TMP_SHOT" || TMP_SHOT=""
+          shift ;;
+        --shot-screen)
+          TMP_SHOT="$STATE_DIR/ask-shot-$(date +%s).png"
+          screencapture -x "$TMP_SHOT" 2>/dev/null
+          [ -s "$TMP_SHOT" ] && SHOT_ARG="--image $TMP_SHOT" || TMP_SHOT=""
+          shift ;;
+        --shot-select)
+          TMP_SHOT="$STATE_DIR/ask-shot-$(date +%s).png"
+          screencapture -i "$TMP_SHOT" 2>/dev/null
+          [ -s "$TMP_SHOT" ] && SHOT_ARG="--image $TMP_SHOT" || TMP_SHOT=""
+          shift ;;
+        --shot) SHOT_ARG="--image $2"; shift 2 ;;
+        *) EXTRA_ARGS+=("$1"); shift ;;
+      esac
+    done
+    # Capture iTerm context
+    TMP_CTX="$STATE_DIR/ask-context-$$.txt"
+    osascript 2>/dev/null <<'EOF' > "$TMP_CTX"
+tell application "iTerm"
+  try
+    return contents of current session of current tab of current window
+  on error
+    return ""
+  end try
+end tell
+EOF
+    if [ ! -s "$TMP_CTX" ]; then
+      echo "${R}✗${N} Could not capture iTerm session. Make sure iTerm has a Claude tab focused." >&2
+      rm -f "$TMP_CTX"
+      exit 1
+    fi
+    grep -v '^[[:space:]]*$' "$TMP_CTX" | tail -120 > "$TMP_CTX.trim"
+    mv "$TMP_CTX.trim" "$TMP_CTX"
+    echo "${D}Asking Claude (context: $(wc -l < "$TMP_CTX") lines)...${N}" >&2
+    # shellcheck disable=SC2086
+    python3 "$HOME/.claude/hooks/scripts/keepitgoing-unstuck.py" \
+        --input-file "$TMP_CTX" --question "$QUESTION" $SHOT_ARG "${EXTRA_ARGS[@]}"
+    status=$?
+    rm -f "$TMP_CTX"
+    [ -n "$TMP_SHOT" ] && echo "${D}Screenshot preserved at: $TMP_SHOT${N}" >&2
+    exit "$status"
+    ;;
+  delegate)
+    shift
+    TASK=""
+    EXTRA_ARGS=()
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --dry-run|--force|--budget|--keep-worktree|--remove-worktree|--version)
+          EXTRA_ARGS+=("$1"); shift ;;
+        --model|--repo|--timeout)
+          EXTRA_ARGS+=("$1" "$2"); shift 2 ;;
+        *)
+          if [ -z "$TASK" ]; then TASK="$1"; else EXTRA_ARGS+=("$1"); fi
+          shift ;;
+      esac
+    done
+    if [ -z "$TASK" ]; then
+      # Allow --budget without a task
+      for a in "${EXTRA_ARGS[@]}"; do
+        if [ "$a" = "--budget" ]; then
+          python3 "$HOME/.claude/hooks/scripts/keepitgoing-delegate.py" --budget
+          exit 0
+        fi
+      done
+      echo "usage: kig delegate \"narrow task description\" [--dry-run] [--model sonnet] [--repo /path]" >&2
+      echo "       kig delegate --budget" >&2
+      exit 1
+    fi
+    python3 "$HOME/.claude/hooks/scripts/keepitgoing-delegate.py" "$TASK" "${EXTRA_ARGS[@]}"
+    exit $?
     ;;
   budget)
     shift
