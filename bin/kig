@@ -17,6 +17,10 @@
 #   kig model list         list all profiles
 #   kig unstuck            escalate the focused Claude tab's stuck session to Opus (or configured model)
 #   kig unstuck --dry-run  show what context would be sent without actually calling Opus
+#   kig unstuck --shot-sim    include a booted-simulator screenshot so Opus can see the UI
+#   kig unstuck --shot-screen include a full-desktop screenshot
+#   kig unstuck --shot-select include an interactive region capture
+#   kig unstuck --shot <path> include an existing PNG screenshot
 #   kig budget             show today's Claude escalation budget (wall-clock time used)
 #   kig budget set <dur>   set the daily escalation budget (e.g. 4h, 6h, 30m)
 #   kig budget model <m>   set the escalation model (opus|sonnet|haiku)
@@ -365,6 +369,40 @@ print(f'${G}✓${N} classifier profile set to: $arg')
     ;;
   unstuck)
     shift
+    # Extract screenshot-convenience flags BEFORE passing the rest through.
+    SHOT_ARG=""
+    TMP_SHOT=""
+    EXTRA_ARGS=()
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --shot-sim)
+          TMP_SHOT="$STATE_DIR/unstuck-shot-$(date +%s).png"
+          echo "${D}Capturing booted iOS simulator → $TMP_SHOT${N}"
+          if xcrun simctl io booted screenshot "$TMP_SHOT" 2>/dev/null && [ -s "$TMP_SHOT" ]; then
+            SHOT_ARG="--image $TMP_SHOT"
+          else
+            echo "${Y}⚠${N} no booted simulator; skipping screenshot"
+            TMP_SHOT=""
+          fi
+          shift ;;
+        --shot-screen)
+          TMP_SHOT="$STATE_DIR/unstuck-shot-$(date +%s).png"
+          echo "${D}Capturing full desktop → $TMP_SHOT${N}"
+          screencapture -x "$TMP_SHOT" 2>/dev/null
+          if [ -s "$TMP_SHOT" ]; then SHOT_ARG="--image $TMP_SHOT"; else TMP_SHOT=""; fi
+          shift ;;
+        --shot-select)
+          TMP_SHOT="$STATE_DIR/unstuck-shot-$(date +%s).png"
+          echo "${B}Drag to select a region (Esc to cancel)…${N}"
+          screencapture -i "$TMP_SHOT" 2>/dev/null
+          if [ -s "$TMP_SHOT" ]; then SHOT_ARG="--image $TMP_SHOT"; else TMP_SHOT=""; fi
+          shift ;;
+        --shot)
+          SHOT_ARG="--image $2"; shift 2 ;;
+        *)
+          EXTRA_ARGS+=("$1"); shift ;;
+      esac
+    done
     # Capture last N lines of focused iTerm session, pipe to unstuck script
     TMP_CTX="$STATE_DIR/unstuck-context-$$.txt"
     osascript 2>/dev/null <<EOF > "$TMP_CTX"
@@ -387,11 +425,11 @@ EOF
     mv "$TMP_CTX.trimmed" "$TMP_CTX"
     echo "${D}Context: $(wc -l < "$TMP_CTX") lines / $(wc -c < "$TMP_CTX") chars${N}"
     echo "${B}⚡ Escalating to Claude (this may take 30-120s)...${N}"
-    # Pass through all remaining args (--dry-run, --force, --model, etc.)
-    NUDGE=$(python3 "$HOME/.claude/hooks/scripts/keepitgoing-unstuck.py" --input-file "$TMP_CTX" "$@" 2>&1 1>&3 3>&-)
-    status=$?
-    # Actually we need stdout (the nudge) separately from stderr; redo:
-    python3 "$HOME/.claude/hooks/scripts/keepitgoing-unstuck.py" --input-file "$TMP_CTX" "$@" > "$TMP_CTX.out" 2> "$TMP_CTX.err"
+    # Pass through remaining args (--dry-run, --force, --model, etc.) plus any --image shot
+    # shellcheck disable=SC2086
+    python3 "$HOME/.claude/hooks/scripts/keepitgoing-unstuck.py" \
+        --input-file "$TMP_CTX" $SHOT_ARG "${EXTRA_ARGS[@]}" \
+        > "$TMP_CTX.out" 2> "$TMP_CTX.err"
     status=$?
     if [ "$status" = 0 ]; then
       if grep -q '"dry_run": true' "$TMP_CTX.out" 2>/dev/null; then
@@ -415,6 +453,8 @@ EOF
       cat "$TMP_CTX.err" >&2
     fi
     rm -f "$TMP_CTX" "$TMP_CTX.out" "$TMP_CTX.err"
+    # Keep the shot on disk so the user can re-view it; will be cleaned by devclean
+    [ -n "$TMP_SHOT" ] && echo "${D}Screenshot preserved at: $TMP_SHOT${N}"
     exit "$status"
     ;;
   budget)

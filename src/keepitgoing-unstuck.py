@@ -60,11 +60,12 @@ RULES for your response:
 5. If the junior AI has been investigating the wrong thing for a while, say so and redirect.
 6. Your output will be fed as a prompt to the junior AI — write it as a directive TO the AI, not ABOUT it.
 7. Do NOT output JSON, markdown fences, or any wrapper. Plain text directive only.
+8. If a screenshot path is provided below, USE YOUR Read TOOL on that path to see the image, then factor what you see into your directive.
 
 Junior AI's recent session:
 ---
 {content}
----"""
+---{image_section}"""
 
 
 def log_stderr(msg):
@@ -141,9 +142,24 @@ def truncate(text, n):
     return "...[truncated head]...\n" + text[-n:]
 
 
-def call_escalation(content, model, timeout_sec):
-    """Invoke `claude -p --model <model>` with the unstuck prompt. Returns stdout."""
-    prompt = UNSTUCK_PROMPT.replace("{content}", content)
+def call_escalation(content, model, timeout_sec, image_path=None):
+    """Invoke `claude -p --model <model>` with the unstuck prompt. Returns stdout.
+
+    If image_path is provided, the prompt includes an instruction for Claude to
+    Read() the image at that path — Claude Code's agent mode can resolve local
+    file paths referenced in prompts.
+    """
+    image_section = ""
+    if image_path:
+        image_section = (
+            f"\n\nA current screenshot has been captured at: {image_path}\n"
+            f"Use your Read tool on this exact path to see the image. "
+            f"Base part of your directive on what you actually observe in it "
+            f"(layout, errors visible on screen, simulator state, etc.)."
+        )
+    prompt = UNSTUCK_PROMPT.replace("{content}", content).replace(
+        "{image_section}", image_section
+    )
     t0 = time.monotonic()
     try:
         result = subprocess.run(
@@ -203,6 +219,11 @@ def parse_args():
         help="Max input characters to send",
     )
     p.add_argument(
+        "--image",
+        default=None,
+        help="Path to a screenshot PNG — Claude will Read it and factor the visual into the nudge",
+    )
+    p.add_argument(
         "--version", action="version", version=f"keepitgoing-unstuck {VERSION}"
     )
     return p.parse_args()
@@ -253,7 +274,17 @@ def main():
         return 0
 
     try:
-        nudge, elapsed = call_escalation(content, model, args.timeout)
+        # Validate image path up front if provided
+        image_path = None
+        if args.image:
+            img = Path(args.image)
+            if not img.exists():
+                log_stderr(f"image not found: {args.image}")
+                return 3
+            image_path = str(img.resolve())
+        nudge, elapsed = call_escalation(
+            content, model, args.timeout, image_path=image_path
+        )
     except Exception as e:
         log_stderr(f"escalation failed: {e}")
         return 2
