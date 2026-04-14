@@ -261,25 +261,25 @@ PERMANENT_DIRECTIVE = "when you show me a menu or ask y/n, always put your recom
 # The preamble frames everything as ambient background — continue what you're
 # doing, absorb the reminders, don't change course.
 PREAMBLE_VARIANTS = [
-    "[ambient — DO NOT change what you're doing. if a command returns empty or is denied, accept it and move on — don't retry or investigate why. keep working.]",
-    "[background — continue your current work. STOP if you've run 3+ commands with the same intent — that's a loop. accept the answer and decide.]",
-    "[don't derail — stay on your task. if `git diff` returns nothing, the files are identical — don't run it 5 more ways. empty output IS the answer.]",
-    "[keep working — these are sideline reminders. if a command is DENIED, try ONE alternative then move on. don't read settings or hooks to debug permissions.]",
-    "[passive — your current task is priority. remember: git reset --hard is blocked by Claude Code itself. use `git checkout -B branch origin/branch` instead.]",
-    "[stay on course — don't pivot. don't narrate confusion in Thinking blocks. one diagnostic command, one decision, move on. no 'hmm let me try...' loops.]",
-    "[ambient — don't stop. don't switch. if you're investigating something and got your answer in 2 commands, STOP investigating. decide and act.]",
-    "[no context switch — keep going. token budget is real money. every re-read, re-grep, re-diff you don't need costs tokens. cache mentally, don't re-fetch.]",
+    "[ambient — keep going. empty/denied = answer, move on.]",
+    "[background — continue. 3 same cmds = loop. stop.]",
+    "[don't derail. empty output IS the answer.]",
+    "[keep working. denied? one alt, then move on.]",
+    "[stay on task. no 'hmm let me try' loops.]",
+    "[ambient — don't pivot. decide and act.]",
+    "[no switch. cache results. don't re-fetch.]",
+    "[passive. tokens = money. every call counts.]",
 ]
 
 PERMANENT_DIRECTIVE_VARIANTS = [
-    "(think deeply. fill gaps. no retry loops. denied? try ONE alt then move on. menus: #1 = yours.)",
-    "(think deeply. don't loop. empty output = answer. denied command = use workaround. menus: rec first.)",
-    "(think deeply. fill gaps. 3 cmds same intent = STOP. cache results mentally. menus: #1.)",
-    "(depth > speed. fill gaps. no narrating confusion — decide. denied? pivot, don't investigate. menus: #1.)",
-    "(think deeply. no wasted tokens. one check, one answer. denied? one alternative. menus: #1 = your pick.)",
-    "(the right path, not the easy path. no loops. no re-reading files you just read. menus: rec = option 1.)",
-    "(think deeply. fill all gaps. surface blockers ONCE then proceed with best judgment. menus: #1.)",
-    "(think deeply. be efficient. every tool call costs tokens. make each one count. menus: rec first.)",
+    "(think. no loops. menus: #1.)",
+    "(depth > speed. denied? pivot. menus: rec.)",
+    "(fill gaps. one check, one answer. menus: #1.)",
+    "(right > easy. cache mentally. menus: #1.)",
+    "(efficient. every call costs. menus: rec.)",
+    "(think deeply. surface once, proceed. menus: #1.)",
+    "(no wasted tokens. decide. menus: rec.)",
+    "(think. don't re-read files. menus: #1.)",
 ]
 
 DIRECTIVES = {
@@ -675,6 +675,28 @@ DIRECTIVES = {
         "the temptation to 'just also fix this while I'm here' is how 1-Issue PRs become 5-Issue PRs. file it separately.",
         "if a branch has been open for days, it's probably drifting. check: do all changes still relate to the original Issue?",
         "re-read the Issue before committing. does your diff address what was asked? if you changed things not in the Issue, split them out.",
+    ],
+    "compaction_amnesia": [
+        "POST-COMPACTION CHECK: you just lost memory. before dismissing any file as 'pre-existing' or 'not my code' — RUN `git log --format='%an|%s' -20 <file>`. If any commit has Co-Authored-By Claude or conventional-commit prefix, YOU wrote it.",
+        "'pre-existing' is a BANNED phrase. so is 'not my changes', 'unrelated to my work', 'inherited from before'. If code is in this repo, YOU own it. Fix the bug.",
+        "uncommitted changes on a Claude-authored file = you were MID-EDIT when compaction hit. Finish the edit. Don't abandon half-done work.",
+        "CI red with 7 failing jobs? Every one is yours. Pull logs for EACH. Don't attribute them all to one guess like 'probably lint'. Gitleaks failing ≠ lint failing.",
+        "after compaction, your reflex will be 'this doesn't look familiar, must be someone else's.' That reflex is WRONG. Check git log. All code in this repo is yours.",
+        "if the current diff doesn't match what you remember writing, run `git log -1 --stat` to see what you actually committed. Your memory faded; git didn't.",
+        "you had a compaction? Re-read CLAUDE.md, re-read the Issue you're on, re-read the PR description, THEN continue. Don't resume blind.",
+        "CI failing + 'not from my changes' = you're about to violate the ownership rule. STOP. Check `git blame` on each failing line. Fix what's broken regardless of who typed it first.",
+        "ownership is never scoped to the current diff. If you shipped PR #1 that touched file X, and PR #2 touches file Y, a bug in file X is still yours.",
+        "when CI is red, NEVER ship. NEVER close. NEVER merge. Investigate every failing check, fix each cause, re-push. No exceptions.",
+    ],
+    "disk_hygiene": [
+        "disk space is tight on this M1. run `devclean --safe` to clear Tier 1 items (Trash, logs, brew cache, /tmp, Claude image-cache) — always safe, never touches active builds.",
+        "DO NOT run `devclean --full` while an iOS or Android build is running — it will delete DerivedData/Gradle caches mid-build and break things. Use `devclean --safe` during active builds, `devclean --full` only when idle.",
+        "active builds claim these caches: xcodebuild → DerivedData, gradle → .gradle/caches, metro → node caches, cocoapods → CocoaPods cache. Never clear these while the build tool is running.",
+        "safe-anytime cleanup: Trash, old /tmp files (>1 day, owned by user), brew cleanup, Claude image-cache, KIG logs. These never conflict with builds.",
+        "after a release/distribution upload completes: run `devclean --full` to clear Xcode Archives and old DerivedData — the caches will rebuild on next real work.",
+        "`devclean` auto-detects active builds (xcodebuild, gradle, metro, expo, vite, next, cargo, jest, simulator) and skips build caches if any are running. trust it.",
+        "don't preemptively clear DerivedData 'just to save space' — it will cost 10+ minutes to rebuild. Clear it only when disk pressure is real (< 10GB free).",
+        "monthly habit: run `devclean --aggressive` to also clear node_modules in projects not touched in 30+ days. They'll `pnpm install` in a minute when you come back.",
     ],
     "simulator_automation": [
         "NEED TO TAP a button in the iOS simulator? USE `navigator.py` from the ios-simulator skill: `python3 ~/.claude/skills/ios-simulator/ios-simulator-skill/scripts/navigator.py --find-text 'Button Name' --tap`",
@@ -2039,6 +2061,7 @@ def pick_n_categories(n, proj_ctx=None):
     # repeatedly reported unintuitive, broken UI. Autonomy because the AI
     # wastes enormous amounts of time asking for approval.
     critical = [
+        "compaction_amnesia",
         "visual_verification",
         "ux_coherence",
         "stop_asking_approval",
