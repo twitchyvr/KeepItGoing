@@ -676,6 +676,16 @@ DIRECTIVES = {
         "if a branch has been open for days, it's probably drifting. check: do all changes still relate to the original Issue?",
         "re-read the Issue before committing. does your diff address what was asked? if you changed things not in the Issue, split them out.",
     ],
+    "self_rescue": [
+        "STUCK on a problem? before you spin more cycles: (1) screenshot the simulator with `xcrun simctl io booted screenshot /tmp/check.png` (2) analyze with `mcp__MiniMax__understand_image` (3) check if you missed something visual.",
+        "hit a dead end? USE THE ARSENAL: spawn a subagent (`Agent` tool) with fresh 200K context to explore alternatives, use `mcp__context7` for current library docs, use `Grep`/`Glob` to find precedent in the codebase. don't grind alone.",
+        "TOOL CHECK before the 3rd wheel-spin: you have `mcp__MiniMax__understand_image` (screenshots), `mcp__MiniMax__web_search` (current info), `ios-simulator skill` (UI automation), `visual-verify skill` (regression), subagent dispatch. USE them.",
+        "if you're about to run the same command a 3rd time with different args — STOP. Run `kig unstuck` from another terminal to escalate to Opus. Or spawn a subagent with Opus model yourself: `model: 'opus'` in Agent tool call.",
+        "visual/UI issue? NEVER guess — capture screenshot + understand_image gives you eyes. For iOS: `xcrun simctl io booted screenshot`. For mac desktop: `screencapture -x`. For web: playwright screenshot via webapp-testing skill.",
+        "before giving up or filing 'pre-existing issue' — spawn a `subagent_type: Explore` subagent: 'Find how this project handled similar X elsewhere.' Fresh context, different angle, often cracks it.",
+        "wrong-path detection: if you've been investigating the same sub-issue for 10+ minutes, the premise is probably wrong. Take one step back, question your assumption, ask Opus via `kig unstuck` or Agent call.",
+        "don't confuse 'I tried a thing' with 'I solved it.' If the root cause is still unknown after your fix, the fix is speculative. Keep digging or escalate.",
+    ],
     "compaction_amnesia": [
         "POST-COMPACTION CHECK: you just lost memory. before dismissing any file as 'pre-existing' or 'not my code' — RUN `git log --format='%an|%s' -20 <file>`. If any commit has Co-Authored-By Claude or conventional-commit prefix, YOU wrote it.",
         "'pre-existing' is a BANNED phrase. so is 'not my changes', 'unrelated to my work', 'inherited from before'. If code is in this repo, YOU own it. Fix the bug.",
@@ -2068,6 +2078,7 @@ def pick_n_categories(n, proj_ctx=None):
     always_fires = [c for c in always_fires if c in eligible_cats]
 
     critical = [
+        "self_rescue",
         "visual_verification",
         "ux_coherence",
         "stop_asking_approval",

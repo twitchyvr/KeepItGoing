@@ -1121,9 +1121,34 @@ on idle
 											end if
 											my logLine("[kig] pre-fire classify | state=" & kigState & " | cwd=" & sessionCwd)
 										end try
+										-- Auto-escalation config flag (kig budget auto-escalate on/off)
+										set kigAutoEscalate to false
+										try
+											set autoFlag to my shellCmd("python3 -c 'import json,pathlib;p=pathlib.Path.home()/\".claude/hooks/keepitgoing-config.json\";print(\"yes\" if p.exists() and json.loads(p.read_text()).get(\"auto_escalate\",False) else \"no\")' 2>/dev/null || echo no")
+											set kigAutoEscalate to (autoFlag is "yes")
+										end try
 										if kigState is "asking_user" then
 											my shellCmd("terminal-notifier -title 'KIG: AI asked you a question' -message " & quoted form of kigDirectQuestion & " -sound default 2>/dev/null || true")
 											my logLine("[kig] SUPPRESS fire — AI is asking user: " & my sanitizeForLog(kigDirectQuestion))
+										else if kigState is "blocked" and kigAutoEscalate then
+											my logLine("[kig] AUTO-ESCALATE — state=blocked, invoking unstuck")
+											my shellCmd("terminal-notifier -title 'KIG: auto-escalating stuck session' -message 'Sending to Opus for strategy nudge' 2>/dev/null || true")
+											set unstuckOut to ""
+											try
+												set unstuckOut to my shellCmd("timeout 90 python3 ~/.claude/hooks/scripts/keepitgoing-unstuck.py --input-file " & quoted form of tmpFile & " 2>/dev/null || echo ''")
+											end try
+											if (count of characters of unstuckOut) > 20 then
+												set thePrompt to unstuckOut
+												my logLine("[kig] auto-escalation nudge obtained (" & (count of characters of unstuckOut as string) & " chars)")
+											else
+												my logLine("[kig] auto-escalation returned empty — falling back to normal prompt")
+											end if
+											if my sendPromptToSession(s, thePrompt) then
+												my recordSendTime(sessionKey)
+												my logLine("[KeepItGoing] prompt sent | mode=auto-escalate | cwd=" & sessionCwd & " | prompt=" & my sanitizeForLog(thePrompt))
+											else
+												my logLine("[kig] bailout send failed | cwd=" & sessionCwd)
+											end if
 										else
 											if my sendPromptToSession(s, thePrompt) then
 												my recordSendTime(sessionKey)
