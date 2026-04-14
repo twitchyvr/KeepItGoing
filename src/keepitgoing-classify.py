@@ -40,15 +40,93 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 SCHEMA_VERSION = 1
 STATE_DIR = Path("/tmp/claude-keepitgoing")
-DEFAULT_MODEL = "haiku"
-CLASSIFIER_TIMEOUT_SEC = 20
+CONFIG_FILE = Path.home() / ".claude" / "hooks" / "keepitgoing-config.json"
+CLAUDE_JSON = Path.home() / ".claude.json"
+DEFAULT_PROFILE = "haiku"
+CLASSIFIER_TIMEOUT_SEC = 25
 MAX_INPUT_CHARS = 8000
 
 VALID_STATES = {"working", "asking_user", "blocked", "done", "idle", "unknown"}
 VALID_ACTIONS = {"escalate", "quiet_wait", "nudge_normal", "priority_next"}
+
+# Classifier profiles. Each maps a short name → how to invoke `claude -p`.
+#  - base_url=None  → use system default (Anthropic auth from Claude Code)
+#  - api_key_env    → env var name to look up; if missing, try ~/.claude.json MCP env
+PROFILES = {
+    "haiku": {
+        "model": "haiku",
+        "base_url": None,
+        "api_key_env": None,
+        "description": "Claude Haiku 4.5 via Anthropic (fast, cheap, per-call cost)",
+    },
+    "sonnet": {
+        "model": "sonnet",
+        "base_url": None,
+        "api_key_env": None,
+        "description": "Claude Sonnet via Anthropic (balanced, per-call cost)",
+    },
+    "opus": {
+        "model": "opus",
+        "base_url": None,
+        "api_key_env": None,
+        "description": "Claude Opus 4.6 via Anthropic (smartest, higher per-call cost)",
+    },
+    "minimax-highspeed": {
+        "model": "MiniMax-M2.7-highspeed",
+        "base_url": "https://api.minimax.io/anthropic",
+        "api_key_env": "MINIMAX_API_KEY",
+        "description": "MiniMax M2.7 highspeed (uses MiniMax plan tokens, not per-call)",
+    },
+    "minimax": {
+        "model": "MiniMax-M2.7",
+        "base_url": "https://api.minimax.io/anthropic",
+        "api_key_env": "MINIMAX_API_KEY",
+        "description": "MiniMax M2.7 standard (uses MiniMax plan tokens)",
+    },
+}
+
+
+def load_profile(profile_name=None):
+    """Resolve the active profile. Priority: --profile flag > config file > default."""
+    if profile_name is None:
+        if CONFIG_FILE.exists():
+            try:
+                cfg = json.loads(CONFIG_FILE.read_text())
+                profile_name = cfg.get("classifier_profile", DEFAULT_PROFILE)
+            except Exception:
+                profile_name = DEFAULT_PROFILE
+        else:
+            profile_name = DEFAULT_PROFILE
+    if profile_name not in PROFILES:
+        raise SystemExit(
+            f"keepitgoing-classify: unknown profile {profile_name!r}. "
+            f"Valid: {', '.join(PROFILES)}"
+        )
+    return profile_name, PROFILES[profile_name]
+
+
+def resolve_api_key(env_var):
+    """Look up an API key by env var, falling back to ~/.claude.json MCP env."""
+    if not env_var:
+        return None
+    val = os.environ.get(env_var)
+    if val:
+        return val
+    # Fall back to ~/.claude.json — MCP servers store their env there
+    if CLAUDE_JSON.exists():
+        try:
+            blob = CLAUDE_JSON.read_text()
+            # Naive regex extraction to avoid parsing the whole file
+            m = re.search(rf'"{re.escape(env_var)}"\s*:\s*"([^"]+)"', blob)
+            if m:
+                return m.group(1)
+        except Exception:
+            pass
+    return None
+
 
 CLASSIFIER_PROMPT = """You are a classifier. Read the AI assistant's most recent turn below and output ONE JSON object with this exact shape — nothing else, no prose, no markdown fences.
 
@@ -103,18 +181,28 @@ def truncate(text, n):
     return "...[truncated]...\n" + text[-n:]
 
 
-def call_classifier(content, model, timeout_sec):
-    """Invoke `claude -p` as a subprocess. Returns raw stdout string."""
-    # Use replace() not format() — the prompt contains literal JSON braces that
-    # would confuse str.format's placeholder syntax.
+def call_classifier(content, profile, timeout_sec):
+    """Invoke `claude -p` as a subprocess, routed per profile. Returns raw stdout string."""
     prompt = CLASSIFIER_PROMPT.replace("{content}", content)
+    env = os.environ.copy()
+    if profile.get("base_url"):
+        env["ANTHROPIC_BASE_URL"] = profile["base_url"]
+    if profile.get("api_key_env"):
+        key = resolve_api_key(profile["api_key_env"])
+        if not key:
+            raise RuntimeError(
+                f"API key for env var {profile['api_key_env']} not found — "
+                "check ~/.claude.json or your shell env"
+            )
+        env["ANTHROPIC_API_KEY"] = key
     try:
         result = subprocess.run(
-            ["claude", "-p", "--model", model, "--output-format", "text"],
+            ["claude", "-p", "--model", profile["model"], "--output-format", "text"],
             input=prompt,
             capture_output=True,
             text=True,
             timeout=timeout_sec,
+            env=env,
         )
     except FileNotFoundError:
         raise RuntimeError("`claude` CLI not found on PATH")
@@ -213,9 +301,20 @@ def parse_args():
         help="Session identifier (defaults to $CLAUDE_SESSION_ID or 'default')",
     )
     p.add_argument(
+        "--profile",
+        default=None,
+        help=f"Classifier profile (valid: {', '.join(PROFILES)}). "
+        f"Default: read from {CONFIG_FILE}, falls back to '{DEFAULT_PROFILE}'.",
+    )
+    p.add_argument(
         "--model",
-        default=DEFAULT_MODEL,
-        help=f"Classifier model (default: {DEFAULT_MODEL})",
+        default=None,
+        help="Override the model inside the chosen profile (advanced; usually use --profile)",
+    )
+    p.add_argument(
+        "--list-profiles",
+        action="store_true",
+        help="List all classifier profiles and exit",
     )
     p.add_argument(
         "--timeout",
@@ -238,8 +337,20 @@ def parse_args():
 
 def main():
     args = parse_args()
+    if args.list_profiles:
+        for name, cfg in PROFILES.items():
+            print(f"  {name:22}  {cfg['description']}")
+            print(f"  {'':22}  model={cfg['model']}  base_url={cfg['base_url']}")
+        return 0
     if not args.input_file and not args.stdin:
         args.stdin = True  # default when piped
+
+    # Resolve profile (explicit --profile > config file > DEFAULT)
+    profile_name, profile = load_profile(args.profile)
+    # Allow --model to override the model within the profile
+    if args.model:
+        profile = dict(profile)
+        profile["model"] = args.model
 
     t0 = time.monotonic()
     raw_input = read_input(args)
@@ -248,33 +359,42 @@ def main():
 
     if args.dry_run:
         log_stderr(
-            f"DRY RUN: would classify {len(content)} chars via model={args.model}"
+            f"DRY RUN: would classify {len(content)} chars via "
+            f"profile={profile_name} model={profile['model']} base_url={profile['base_url']}"
         )
         print(
             json.dumps(
-                {"dry_run": True, "input_chars": len(content), "session": args.session},
+                {
+                    "dry_run": True,
+                    "input_chars": len(content),
+                    "session": args.session,
+                    "profile": profile_name,
+                    "model": profile["model"],
+                },
                 indent=2,
             )
         )
         return 0
 
     try:
-        raw = call_classifier(content, args.model, args.timeout)
+        raw = call_classifier(content, profile, args.timeout)
         parsed = extract_json(raw)
         validated = validate_and_normalize(parsed)
         validated.update(
             {
                 "schema_version": SCHEMA_VERSION,
                 "classified_at": utcnow_iso(),
-                "classifier_model": args.model,
+                "classifier_profile": profile_name,
+                "classifier_model": profile["model"],
                 "input_excerpt": excerpt,
                 "elapsed_ms": int((time.monotonic() - t0) * 1000),
             }
         )
         payload = validated
     except Exception as e:
-        log_stderr(f"classifier failed: {e}")
-        payload = build_unknown_result(str(e), excerpt, args.model)
+        log_stderr(f"classifier failed (profile={profile_name}): {e}")
+        payload = build_unknown_result(str(e), excerpt, profile["model"])
+        payload["classifier_profile"] = profile_name
 
     if args.output_file:
         out_path = Path(args.output_file)

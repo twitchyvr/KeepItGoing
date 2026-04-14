@@ -12,6 +12,9 @@
 #   kig fire               fire immediately, bypassing cooldown (one-shot)
 #   kig edit               open override-prompt.txt in $EDITOR — next fire uses this verbatim
 #   kig preview            show what prompt the generator would produce right now (no fire)
+#   kig model              show current classifier model
+#   kig model <profile>    switch classifier profile (haiku|sonnet|opus|minimax-highspeed|minimax)
+#   kig model list         list all profiles
 #   kig watch              live countdown display, refreshing every second
 #   kig list               show every Claude tab's on/off state
 #   kig log                tail the KIG log
@@ -200,6 +203,16 @@ print_status() {
       fi ;;
   esac
 
+  # Classifier profile
+  local cfg="$HOME/.claude/hooks/keepitgoing-config.json"
+  if [ -f "$cfg" ]; then
+    local profile
+    profile=$(python3 -c "import json; print(json.load(open('$cfg')).get('classifier_profile', 'haiku'))" 2>/dev/null || echo "haiku")
+    echo "  classifier: ${B}$profile${N}"
+  else
+    echo "  classifier: ${D}haiku (default)${N}"
+  fi
+
   # This tab
   local ts; ts=$(tab_status 2>/dev/null || echo "unknown")
   echo "  this tab: $ts"
@@ -292,6 +305,57 @@ EOF
         echo "${Y}⊘${N} Override file empty — no override queued."
       fi
     fi
+    ;;
+  model)
+    CONFIG_FILE="$HOME/.claude/hooks/keepitgoing-config.json"
+    mkdir -p "$(dirname "$CONFIG_FILE")"
+    shift
+    arg="${1:-}"
+    case "$arg" in
+      "")
+        # Show current
+        if [ -f "$CONFIG_FILE" ]; then
+          current=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('classifier_profile', 'haiku'))" 2>/dev/null || echo "haiku")
+        else
+          current="haiku (default — no config)"
+        fi
+        echo "${B}Current classifier profile:${N} $current"
+        echo ""
+        python3 "$HOME/.claude/hooks/scripts/keepitgoing-classify.py" --list-profiles
+        ;;
+      list)
+        python3 "$HOME/.claude/hooks/scripts/keepitgoing-classify.py" --list-profiles
+        ;;
+      haiku|sonnet|opus|minimax-highspeed|minimax)
+        python3 -c "
+import json, pathlib
+p = pathlib.Path('$CONFIG_FILE')
+cfg = {}
+if p.exists():
+    try: cfg = json.loads(p.read_text())
+    except Exception: pass
+cfg['classifier_profile'] = '$arg'
+p.parent.mkdir(parents=True, exist_ok=True)
+p.write_text(json.dumps(cfg, indent=2))
+print(f'${G}✓${N} classifier profile set to: $arg')
+"
+        echo ""
+        echo "${D}Smoke-testing new profile with a canned classify...${N}"
+        smoke_out=$(echo "Done with task. What next?" | \
+          timeout 40 python3 "$HOME/.claude/hooks/scripts/keepitgoing-classify.py" --stdin --session kig-model-test 2>/dev/null)
+        if [ -n "$smoke_out" ]; then
+          echo "$smoke_out" | python3 -c "import json,sys; d=json.load(sys.stdin); print(f\"  ${G}✓${N} state={d.get('state')} elapsed={d.get('elapsed_ms','?')}ms model={d.get('classifier_model')}\")" 2>/dev/null || \
+            echo "  ${Y}⚠${N} smoke test returned non-JSON"
+        else
+          echo "  ${Y}⚠${N} smoke test returned no output (API unreachable?)"
+        fi
+        ;;
+      *)
+        echo "kig model: unknown profile '$arg'" >&2
+        echo "try: kig model list" >&2
+        exit 1
+        ;;
+    esac
     ;;
   preview)
     cwd=$(osascript <<'EOF' 2>/dev/null
