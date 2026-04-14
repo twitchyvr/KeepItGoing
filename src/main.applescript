@@ -9,7 +9,7 @@ property permissionDelay : 3
 property maxSessionAge : 7200
 
 property stateDir : "/tmp/claude-keepitgoing/"
-property generatorScript : "/Users/mattrogers/.claude/hooks/scripts/keepitgoing-generate.py"
+property generatorScript : "__KIG_GENERATOR_PATH__"
 
 property claudeSpinnerChars : {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", "⠁", "⠂", "⠄", "⠐", "⠈", "⡀", "⢀", "⣀", "⣄", "⣤", "⣦", "⣶", "⣷", "⣿", "✳", "✻", "✶", "✷", "✸"}
 property claudeNamePatterns : {"Claude Code", "claude", "python)"}

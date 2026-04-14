@@ -47,7 +47,7 @@ sleep 1
 
 # Patch and compile
 TEMP_SCRIPT=$(mktemp /tmp/kig-build-XXXXX.applescript)
-sed "s|/Users/mattrogers/.claude/hooks/scripts/keepitgoing-generate.py|${GENERATOR_PATH}|g" \
+sed "s|__KIG_GENERATOR_PATH__|${GENERATOR_PATH}|g" \
   "${REPO_ROOT}/src/main.applescript" > "${TEMP_SCRIPT}"
 
 mkdir -p "${DIST_DIR}"

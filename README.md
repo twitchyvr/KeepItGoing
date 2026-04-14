@@ -128,4 +128,24 @@ Runtime logs are at `/tmp/claude-keepitgoing/app.log` (auto-rotating at 512KB, o
 
 ## License
 
-TBD — Contact maintainer before redistribution.
+**[PolyForm Noncommercial License 1.0.0](LICENSE)** — source-available, not freely commercial.
+
+### You CAN (without asking)
+
+- Use it personally (hobby projects, research, learning, experimentation)
+- Study the code, modify it, share your changes
+- Use it inside a nonprofit, educational institution, government agency, or public-safety/health/environmental organization
+- Fork it, contribute back via PRs
+
+### You CANNOT (without a commercial license)
+
+- Sell it, resell it, or bundle it into a paid product
+- Use it inside a commercial company's paid services
+- Offer it as a SaaS / hosted service for paying customers
+- Build a business on top of it without discussing terms
+
+### Commercial licensing
+
+Commercial use requires a separate written license. Open an [Issue](https://github.com/twitchyvr/KeepItGoing/issues) with the subject line **"Commercial License Request"** describing your intended use and I'll get back with terms.
+
+See [LICENSE](LICENSE) for the full legal text.

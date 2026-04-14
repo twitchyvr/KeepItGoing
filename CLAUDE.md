@@ -39,7 +39,7 @@ scripts/
 
 - AppleScript: the applet uses `on idle` handler — macOS calls this repeatedly while the app runs
 - Python: no external dependencies for the state writer. Generator uses only stdlib.
-- All paths configurable via install.sh `--prefix`. Source uses `/Users/mattrogers/` as placeholder — install.sh patches it.
+- All paths configurable via install.sh `--prefix`. Source uses `$HOME/` as placeholder — install.sh patches it.
 - AppleScript edits: decompile with `osadecompile`, edit the `.applescript`, recompile with `osacompile` or `./scripts/build.sh`
 - After editing the .applescript or .py: kill the running app, rebuild, relaunch. Launch Services caches running applets.
 
@@ -53,6 +53,6 @@ scripts/
 ## What NOT to Do
 
 - Don't commit compiled .app bundles (they're in dist/, gitignored)
-- Don't hardcode `/Users/mattrogers/` — use the install.sh patching mechanism
+- Don't hardcode `$HOME/` — use the install.sh patching mechanism
 - Don't change the LICENSE without explicit instruction — currently TBD
 - Don't add external Python dependencies to the generator or state writer (stdlib only)
