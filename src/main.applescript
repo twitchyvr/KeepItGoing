@@ -1092,13 +1092,47 @@ on idle
 										my shellCmd("rm -f /tmp/claude-keepitgoing/cancel-next.lock")
 										my logLine("[kig] cancel-next — skipping this fire (prompt=" & my sanitizeForLog(thePrompt) & ")")
 									else
-										if my sendPromptToSession(s, thePrompt) then
-											my recordSendTime(sessionKey)
-											my logLine("[KeepItGoing] prompt sent | mode=" & sendMode & " | cwd=" & sessionCwd & " | idleDur=" & (idleDur as string) & "s | prompt=" & my sanitizeForLog(thePrompt))
+										-- PRE-FIRE CLASSIFIER: cheap LLM check of the target session state.
+										-- If AI is asking the user a question, skip the fire and notify instead.
+										set kigState to "unknown"
+										set kigDirectQuestion to ""
+										try
+											set tailText to ""
+											try
+												tell application "iTerm"
+													with timeout of 3 seconds
+														set tailText to contents of s
+													end timeout
+												end tell
+											end try
+											set lastChunk to my lastNonBlankLines(tailText, 40)
+											-- Write to tmp, invoke classifier, read state.
+											set tmpFile to "/tmp/claude-keepitgoing/classify-input-" & sessionKey & ".txt"
+											-- Sanitize sessionKey for filenames (replace / with _)
+											set safeKey to my shellCmd("printf '%s' " & quoted form of sessionKey & " | tr '/' '_'")
+											set tmpFile to "/tmp/claude-keepitgoing/classify-" & safeKey & ".txt"
+											my shellCmd("cat > " & quoted form of tmpFile & " <<'KIGEOF'\n" & lastChunk & "\nKIGEOF")
+											set classifyOut to my shellCmd("timeout 20 python3 ~/.claude/hooks/scripts/keepitgoing-classify.py --input-file " & quoted form of tmpFile & " --session " & quoted form of safeKey & " 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get(\"state\",\"unknown\") + \"|\" + (d.get(\"direct_question\") or \"\"))'")
+											if classifyOut contains "|" then
+												set AppleScript's text item delimiters to "|"
+												set kigState to text item 1 of classifyOut
+												set kigDirectQuestion to text item 2 of classifyOut
+												set AppleScript's text item delimiters to ""
+											end if
+											my logLine("[kig] pre-fire classify | state=" & kigState & " | cwd=" & sessionCwd)
+										end try
+										if kigState is "asking_user" then
+											my shellCmd("terminal-notifier -title 'KIG: AI asked you a question' -message " & quoted form of kigDirectQuestion & " -sound default 2>/dev/null || true")
+											my logLine("[kig] SUPPRESS fire — AI is asking user: " & my sanitizeForLog(kigDirectQuestion))
 										else
-											my logLine("[kig] bailout send failed | cwd=" & sessionCwd)
+											if my sendPromptToSession(s, thePrompt) then
+												my recordSendTime(sessionKey)
+												my logLine("[KeepItGoing] prompt sent | mode=" & sendMode & " | cwd=" & sessionCwd & " | idleDur=" & (idleDur as string) & "s | prompt=" & my sanitizeForLog(thePrompt))
+											else
+												my logLine("[kig] bailout send failed | cwd=" & sessionCwd)
+											end if
 										end if
-									end if
+										end if
 									end if
 							end if
 						end if
