@@ -1278,12 +1278,12 @@ TEMPLATES_DETAILED = [
 ]
 
 TEMPLATES_TERSE = [
-    "{opener}",
     "{opener} {d1}",
     "{opener} {d1} {context}",
-    "{intensity} {opener}",
+    "{intensity} {opener} {d1}",
     "{d1} {opener}",
-    "{opener} {intensity}",
+    "{opener} {intensity} {d1}",
+    "{d1}. {opener}",
 ]
 
 TEMPLATES_FOCUSED = [
@@ -2060,8 +2060,14 @@ def pick_n_categories(n, proj_ctx=None):
     # Visual verification and UX coherence are critical because users have
     # repeatedly reported unintuitive, broken UI. Autonomy because the AI
     # wastes enormous amounts of time asking for approval.
+    # Tier 0 ("always-fires"): 100% include. compaction_amnesia is here because
+    # a single "pre-existing" dismissal after compaction has cost full hours of
+    # work (e.g., macaron-tycoon PR #1385 red CI ignored for 1h). The ~30-token
+    # ambient reminder is strictly cheaper than one amnesia incident.
+    always_fires = ["compaction_amnesia"]
+    always_fires = [c for c in always_fires if c in eligible_cats]
+
     critical = [
-        "compaction_amnesia",
         "visual_verification",
         "ux_coherence",
         "stop_asking_approval",
@@ -2098,33 +2104,39 @@ def pick_n_categories(n, proj_ctx=None):
     random.shuffle(critical)
     random.shuffle(elevated)
 
-    selected = []
+    # Tier 0 is PINNED — always first, never shuffled out, never truncated
+    pinned = list(always_fires)
+
+    rest = []
 
     # Tier 1: 90% chance to include at least one critical category
     if critical and random.random() < 0.90:
-        selected.append(critical[0])
+        rest.append(critical[0])
 
     # Tier 2: 70% chance to include at least one elevated category
     if elevated and random.random() < 0.70:
-        selected.append(elevated[0])
+        rest.append(elevated[0])
 
     # Core: 50% chance
     if core and random.random() < 0.50:
         pick_core = random.choice(core)
-        if pick_core not in selected:
-            selected.append(pick_core)
+        if pick_core not in rest and pick_core not in pinned:
+            rest.append(pick_core)
 
-    # Fill remaining slots from optional
-    remaining = max(0, n - len(selected))
+    # Fill remaining slots from optional (respecting pinned + rest + n budget)
+    remaining = max(0, n - len(pinned) - len(rest))
     for cat in optional:
         if remaining <= 0:
             break
-        if cat not in selected:
-            selected.append(cat)
+        if cat not in rest and cat not in pinned:
+            rest.append(cat)
             remaining -= 1
 
-    random.shuffle(selected)
-    return [pick(DIRECTIVES[cat]) for cat in selected[:n]]
+    random.shuffle(rest)
+    # Pinned always leads; rest fills the remaining n - len(pinned) slots
+    slot_budget = max(0, n - len(pinned))
+    selected = pinned + rest[:slot_budget]
+    return [pick(DIRECTIVES[cat]) for cat in selected]
 
 
 def generate_standard(git_ctx, proj_ctx):
