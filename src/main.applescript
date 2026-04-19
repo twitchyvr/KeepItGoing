@@ -528,7 +528,29 @@ end extractSelectedOption
 on generatePrompt(cwd, sessionTty)
 	-- Mode-aware dispatch. minimal/simple → tiny curated library (via kig_modes.pick_nudge).
 	-- verbose (default) → existing 70-category directive generator.
+	-- Also respects /loop auto-mute (keyed by cwd) and explicit mute_until (keyed by tty).
 	set kigSrc to (POSIX path of (path to home folder)) & ".claude/kig/_src"
+
+	-- /loop lifecycle: if a /loop run is active for this cwd, emit the sentinel
+	-- so callers can log + skip this tick. clear_if_stale first so a hook that
+	-- failed to fire a CronDelete doesn't keep us muted forever.
+	if cwd is not "" then
+		try
+			set loopCmd to "KIG_SRC=" & quoted form of kigSrc & " KIG_CWD=" & quoted form of cwd & " python3 -c 'import os, sys; sys.path.insert(0, os.environ[\"KIG_SRC\"]); from kig_loop_state import is_loop_active, clear_if_stale; clear_if_stale(os.environ[\"KIG_CWD\"]); print(\"active\" if is_loop_active(os.environ[\"KIG_CWD\"]) else \"idle\")' 2>/dev/null"
+			set loopStatus to my shellCmd(loopCmd)
+			if loopStatus is "active" then return "__KIG_LOOP_MUTED__"
+		end try
+	end if
+
+	-- Explicit mute_until (set by `kig mute 5m` etc.)
+	if sessionTty is not "" then
+		try
+			set muteCmd to "KIG_SRC=" & quoted form of kigSrc & " KIG_TTY=" & quoted form of sessionTty & " python3 -c 'import os, sys, datetime as dt; sys.path.insert(0, os.environ[\"KIG_SRC\"]); from kig_tab_state import load_tab; st = load_tab(os.environ[\"KIG_TTY\"]); u = st.mute_until; print(\"muted\" if (u and dt.datetime.fromisoformat(u.replace(\"Z\",\"+00:00\")) > dt.datetime.now(dt.timezone.utc)) else \"ok\")' 2>/dev/null"
+			set muteStatus to my shellCmd(muteCmd)
+			if muteStatus is "muted" then return "__KIG_MUTED__"
+		end try
+	end if
+
 	set tabMode to "verbose"
 	if sessionTty is not "" then
 		try
@@ -1095,6 +1117,9 @@ on idle
 										tell application "iTerm" to set _genTty to tty of s
 									end try
 									set thePrompt to my generatePrompt(sessionCwd, _genTty)
+									if thePrompt starts with "__KIG_" then
+										my logLine("[kig] skip nudge | reason=" & thePrompt & " | cwd=" & sessionCwd)
+									end if
 									-- Override from `kig edit`: if override-prompt.txt is non-empty, use it instead
 									try
 										set overridePath to "/tmp/claude-keepitgoing/override-prompt.txt"
@@ -1207,6 +1232,9 @@ on idle
 								tell application "iTerm" to set _genTty to tty of s
 							end try
 							set thePrompt to my generatePrompt(sessionCwd, _genTty)
+							if thePrompt starts with "__KIG_" then
+								my logLine("[kig] skip nudge | reason=" & thePrompt & " | cwd=" & sessionCwd)
+							end if
 							if (count of characters of thePrompt) ≥ 20 then
 								-- SPECULATIVE MENU ACCEPT: when the user is away (HID
 								-- idle past 120s), preface the blind nudge with a "1"
