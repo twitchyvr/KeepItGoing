@@ -84,7 +84,32 @@ Auto-detects from project files: web frameworks (Next.js, Vite, Svelte, Angular.
 
 ## Configuration
 
-### Custom Directives
+### Modes, Library, Config (v2.1+)
+
+KIG supports three nudge modes per iTerm tab:
+
+- **`minimal`** — tiny nudges like `"keep going"` / `"continue"` (15 curated entries)
+- **`simple`** — short contextual prompts (~50 entries)
+- **`verbose`** — the full 70-category directive engine (default)
+
+```bash
+kig mode minimal       # set per-tab mode
+kig show               # resolved config + tab state + isolation status
+kig mute 15m           # silence tab for a duration
+kig loop               # alias: mute 15m + reminder to type /loop
+```
+
+Slash commands manage entries and settings (run each with `help` for examples):
+
+| Command        | Purpose                                                                        |
+| -------------- | ------------------------------------------------------------------------------ |
+| `/kig-inject`  | Consolidated pin+inject hybrid — prepend user context to every nudge           |
+| `/kig-library` | Add/remove nudge sentences; suppress global categories; `isolate` escape hatch |
+| `/kig-config`  | Manage settings (mode, poll interval, scope strategy, /loop detection)         |
+
+Storage: global under `~/.claude/kig/`, per-project under `.kig/`. See `docs/testing.md` for manual integration tests.
+
+### Custom Directives (legacy — still supported for the verbose engine)
 
 Copy the example and add your own:
 

@@ -39,6 +39,7 @@
 #   kig mode [MODE]        get/set per-tab nudge mode (minimal|simple|verbose)
 #   kig mute [DURATION]    silence tab for 5m/1h/30s (no arg = clear)
 #   kig loop               mute 15m + reminder to type /loop
+#   kig show               dump resolved config + tab state + isolation status
 #   kig help               show this help
 #
 # State files (in /tmp/claude-keepitgoing/):
@@ -697,6 +698,45 @@ EOF
     ;;
   log | tail)
     exec tail -f "$LOG_FILE"
+    ;;
+  show)
+    # Diagnostic dump: per-tab state + resolved config + project isolation
+    KIG_SRC="${HOME}/.claude/kig/_src"
+    TTY_NAME="$(tty 2>/dev/null | tr -d '\n' || true)"
+    [ -z "$TTY_NAME" ] && TTY_NAME="unknown"
+    KIG_SRC="$KIG_SRC" KIG_TTY="$TTY_NAME" python3 - <<'PYEOF'
+import os, sys
+sys.path.insert(0, os.environ["KIG_SRC"])
+from pathlib import Path
+from kig_config import find_project_kig, load_merged
+from kig_tab_state import load_tab
+from kig_loop_state import is_loop_active
+
+tty = os.environ["KIG_TTY"]
+cfg = load_merged()
+state = load_tab(tty)
+cwd = Path.cwd()
+proj = find_project_kig(cwd)
+isolated = bool(proj and (proj / "isolate").exists())
+loop = is_loop_active(str(cwd))
+
+print(f"TAB: {tty}")
+print(f"  mode          = {state.mode}")
+print(f"  kig_on        = {state.kig_on}")
+print(f"  mute_until    = {state.mute_until or '(none)'}")
+print(f"  loop_active   = {loop}")
+print()
+print("RESOLVED CONFIG:")
+for k, v in cfg.items():
+    print(f"  {k} = {v!r}")
+print()
+print(f"PROJECT .kig/ = {proj or '(none)'}")
+print(f"  isolated    = {isolated}")
+if isolated and proj:
+    lib_count = sum(1 for f in proj.glob("*.json") if f.stat().st_size > 20)
+    if lib_count == 0:
+        print("  WARN: isolated with empty library — no nudges will fire")
+PYEOF
     ;;
   mute)
     # Silence this tab for a duration. No arg = clear any active mute.
