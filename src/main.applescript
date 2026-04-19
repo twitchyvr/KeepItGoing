@@ -1131,8 +1131,10 @@ on idle
 										end if
 									end try
 								end if
-								if (count of characters of thePrompt) < 20 then
-									my logLine("[kig] bailout short prompt | cwd=" & sessionCwd & " | len=" & ((count of characters of thePrompt) as string))
+								if thePrompt starts with "__KIG_" then
+									-- sentinel from generatePrompt (loop-muted, explicit-mute); already logged
+								else if (count of characters of thePrompt) < 2 then
+									my logLine("[kig] bailout empty prompt | cwd=" & sessionCwd)
 								else
 									-- cancel-next lock from `kig cancel` skips ONE fire then auto-clears
 									set kigCancelNext to false
@@ -1235,7 +1237,7 @@ on idle
 							if thePrompt starts with "__KIG_" then
 								my logLine("[kig] skip nudge | reason=" & thePrompt & " | cwd=" & sessionCwd)
 							end if
-							if (count of characters of thePrompt) ≥ 20 then
+							if (not (thePrompt starts with "__KIG_")) and ((count of characters of thePrompt) ≥ 2) then
 								-- SPECULATIVE MENU ACCEPT: when the user is away (HID
 								-- idle past 120s), preface the blind nudge with a "1"
 								-- so if Claude happens to be sitting on a numbered menu
