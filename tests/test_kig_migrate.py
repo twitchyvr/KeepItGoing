@@ -80,6 +80,23 @@ def test_archive_preserves_prior_when_destination_exists(tmp_path):
     assert timestamped[0].name.startswith("kig-pins.json.")
 
 
+def test_migrates_pins_file_list_shape(tmp_path):
+    """Legacy raw-list shape (from earlier rough-cut): [\"a\", \"b\"]."""
+    claude_home = tmp_path / ".claude"
+    kig_home = claude_home / "kig"
+    claude_home.mkdir()
+    (claude_home / "kig-pins.json").write_text(
+        json.dumps(["bare list entry 1", "bare list entry 2"])
+    )
+    migrate_legacy(claude_home=claude_home, kig_home=kig_home)
+    store = load_store(kig_home / "inject.json")
+    assert [e.text for e in store.entries] == [
+        "bare list entry 1",
+        "bare list entry 2",
+    ]
+    assert (kig_home / "legacy" / "kig-pins.json").exists()
+
+
 def test_handles_corrupt_pins_json(tmp_path):
     """Bad JSON in pins file is swallowed; file is still archived; no crash."""
     claude_home = tmp_path / ".claude"
