@@ -37,6 +37,8 @@
 #   kig list               show every Claude tab's on/off state
 #   kig log                tail the KIG log
 #   kig mode [MODE]        get/set per-tab nudge mode (minimal|simple|verbose)
+#   kig mute [DURATION]    silence tab for 5m/1h/30s (no arg = clear)
+#   kig loop               mute 15m + reminder to type /loop
 #   kig help               show this help
 #
 # State files (in /tmp/claude-keepitgoing/):
@@ -695,6 +697,46 @@ EOF
     ;;
   log | tail)
     exec tail -f "$LOG_FILE"
+    ;;
+  mute)
+    # Silence this tab for a duration. No arg = clear any active mute.
+    KIG_SRC="${HOME}/.claude/kig/_src"
+    TTY_NAME="$(tty 2>/dev/null | tr -d '\n' || true)"
+    [ -z "$TTY_NAME" ] && TTY_NAME="unknown"
+    DURATION="${2:-}"
+    if [ -z "$DURATION" ]; then
+      KIG_SRC="$KIG_SRC" KIG_TTY="$TTY_NAME" python3 - <<'PYEOF'
+import os, sys
+sys.path.insert(0, os.environ["KIG_SRC"])
+from kig_tab_state import clear_mute
+clear_mute(os.environ["KIG_TTY"])
+print(f"mute cleared for {os.environ['KIG_TTY']}")
+PYEOF
+      exit 0
+    fi
+    NUM="${DURATION%[smh]}"
+    UNIT="${DURATION: -1}"
+    case "$UNIT" in
+      s) SECS="$NUM" ;;
+      m) SECS="$((NUM * 60))" ;;
+      h) SECS="$((NUM * 3600))" ;;
+      *) echo "kig mute: duration must end in s|m|h (got '$DURATION')" >&2; exit 2 ;;
+    esac
+    KIG_SRC="$KIG_SRC" KIG_TTY="$TTY_NAME" KIG_SECS="$SECS" python3 - <<'PYEOF'
+import os, sys, datetime as dt
+sys.path.insert(0, os.environ["KIG_SRC"])
+from kig_tab_state import set_mute_until
+until = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=int(os.environ["KIG_SECS"]))
+set_mute_until(os.environ["KIG_TTY"], until.isoformat().replace("+00:00", "Z"))
+print(f"muted {os.environ['KIG_TTY']} until {until.isoformat()}")
+PYEOF
+    ;;
+  loop)
+    # Convenience: mute 15m and remind the user to type /loop
+    "$0" mute 15m
+    echo ""
+    echo "Tip: now type '/loop 10m <your-prompt>' in Claude. KIG will stay quiet."
+    echo "     Clear mute early with: kig mute"
     ;;
   mode)
     # Per-tab mode: minimal | simple | verbose

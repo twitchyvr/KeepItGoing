@@ -2398,8 +2398,68 @@ def pick_mode():
     return random.choice(modes)
 
 
+def _suggest_loop_if_long_running(cwd):
+    """Return the suggest-/loop directive if this tab has been non-idle long enough.
+
+    Heuristic: read per-tab last_prompt_sent (set by main.applescript via
+    kig_tab_state). If the gap since the last nudge exceeds the configured
+    threshold (default 15 min), emit a single directive reminding the user
+    to use /loop. Returns None if the heuristic shouldn't fire (module
+    missing, tab state missing, or config disables it).
+    """
+    import os
+    import sys
+
+    _kig_src = os.path.join(os.path.expanduser("~"), ".claude", "kig", "_src")
+    if not os.path.isdir(_kig_src):
+        return None
+    if _kig_src not in sys.path:
+        sys.path.insert(0, _kig_src)
+    try:
+        from kig_config import load_merged  # type: ignore
+        from kig_tab_state import load_tab  # type: ignore
+    except ImportError:
+        return None
+    try:
+        cfg = load_merged()
+    except Exception:
+        return None
+    if not cfg.get("suggest_loop_when_long", True):
+        return None
+    threshold_min = int(cfg.get("suggest_loop_threshold_min", 15))
+    tty = os.environ.get("KIG_TTY", "")
+    if not tty:
+        return None
+    try:
+        state = load_tab(tty)
+    except Exception:
+        return None
+    last = state.last_prompt_sent
+    if not last:
+        return None
+    import datetime as dt
+
+    try:
+        last_dt = dt.datetime.fromisoformat(last.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+    elapsed_min = (dt.datetime.now(dt.timezone.utc) - last_dt).total_seconds() / 60
+    if elapsed_min <= threshold_min:
+        return None
+    return (
+        "This work looks long-running. Consider `/loop 10m <your-prompt>` so "
+        "the session keeps churning without needing nudges. Use `/loop stop` "
+        "when done."
+    )
+
+
 def generate(cwd=None, mode=None):
     """Main entry point: generate a unique, dynamic prompt."""
+    # Suggest-/loop short-circuit (verbose mode only — this is the generator itself)
+    suggestion = _suggest_loop_if_long_running(cwd)
+    if suggestion is not None:
+        return suggestion
+
     git_ctx = get_git_context(cwd) if cwd else {}
     proj_ctx = get_project_context(cwd) if cwd else {}
 
