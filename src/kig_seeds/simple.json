@@ -1,250 +1,62 @@
 {
   "entries": [
-    {
-      "id": "s001",
-      "text": "keep going — break the task into the next small step",
-      "category": "simple"
-    },
-    {
-      "id": "s002",
-      "text": "continue. Run the tests if you're at a checkpoint.",
-      "category": "simple"
-    },
-    {
-      "id": "s003",
-      "text": "don't pause. Commit what's working and keep moving.",
-      "category": "simple"
-    },
-    {
-      "id": "s004",
-      "text": "what's the next subtask? Name it and start it.",
-      "category": "simple"
-    },
-    {
-      "id": "s005",
-      "text": "if you're stuck, say what's blocking — out loud is clearer.",
-      "category": "simple"
-    },
-    {
-      "id": "s006",
-      "text": "small step forward. Don't try to finish in one leap.",
-      "category": "simple"
-    },
-    {
-      "id": "s007",
-      "text": "check git status, then keep going from the last good point.",
-      "category": "simple"
-    },
-    {
-      "id": "s008",
-      "text": "you've got momentum. Don't break it looking for perfection.",
-      "category": "simple"
-    },
-    {
-      "id": "s009",
-      "text": "ship working code now; refine in the next commit.",
-      "category": "simple"
-    },
-    {
-      "id": "s010",
-      "text": "re-read the last task description. What haven't you done?",
-      "category": "simple"
-    },
-    {
-      "id": "s011",
-      "text": "pick the smallest remaining thing and finish it.",
-      "category": "simple"
-    },
-    {
-      "id": "s012",
-      "text": "run the tests. Green? Keep going. Red? Fix first.",
-      "category": "simple"
-    },
-    {
-      "id": "s013",
-      "text": "you're closer than you think. Keep pushing.",
-      "category": "simple"
-    },
-    {
-      "id": "s014",
-      "text": "don't start something new — finish the current thing.",
-      "category": "simple"
-    },
-    {
-      "id": "s015",
-      "text": "save progress with a commit, then continue.",
-      "category": "simple"
-    },
-    {
-      "id": "s016",
-      "text": "what's the acceptance criterion? Are you meeting it?",
-      "category": "simple"
-    },
-    {
-      "id": "s017",
-      "text": "keep it simple. No new abstractions unless needed.",
-      "category": "simple"
-    },
-    {
-      "id": "s018",
-      "text": "walk through the edge cases. Did you cover empty input?",
-      "category": "simple"
-    },
-    {
-      "id": "s019",
-      "text": "what would you do if you had 5 more minutes? Do that.",
-      "category": "simple"
-    },
-    { "id": "s020", "text": "stop narrating. Execute.", "category": "simple" },
-    {
-      "id": "s021",
-      "text": "the test is the spec. Does it pass?",
-      "category": "simple"
-    },
-    {
-      "id": "s022",
-      "text": "check the file you last edited. Is it saved?",
-      "category": "simple"
-    },
-    {
-      "id": "s023",
-      "text": "one clear step, then the next. Don't jump around.",
-      "category": "simple"
-    },
-    {
-      "id": "s024",
-      "text": "if the fix is 3 lines, write 3 lines. Don't refactor.",
-      "category": "simple"
-    },
-    {
-      "id": "s025",
-      "text": "read the error message carefully, then act.",
-      "category": "simple"
-    },
-    {
-      "id": "s026",
-      "text": "you have the answer already. Just write it.",
-      "category": "simple"
-    },
-    {
-      "id": "s027",
-      "text": "commit the failing test first, then make it pass.",
-      "category": "simple"
-    },
-    {
-      "id": "s028",
-      "text": "re-read the requirement. Is this actually what was asked?",
-      "category": "simple"
-    },
-    {
-      "id": "s029",
-      "text": "don't add features the task didn't ask for.",
-      "category": "simple"
-    },
-    {
-      "id": "s030",
-      "text": "is there a simpler version of this that would work?",
-      "category": "simple"
-    },
-    {
-      "id": "s031",
-      "text": "finish the current PR before starting a new one.",
-      "category": "simple"
-    },
-    {
-      "id": "s032",
-      "text": "the plan is in the spec. Follow it task-by-task.",
-      "category": "simple"
-    },
-    {
-      "id": "s033",
-      "text": "short commits, clear messages. Keep going.",
-      "category": "simple"
-    },
-    {
-      "id": "s034",
-      "text": "a failing test is progress. Green it and move on.",
-      "category": "simple"
-    },
+    { "id": "s001", "text": "continue", "category": "simple" },
+    { "id": "s002", "text": "keep going", "category": "simple" },
+    { "id": "s003", "text": "don't stop", "category": "simple" },
+    { "id": "s004", "text": "you aren't done yet", "category": "simple" },
+    { "id": "s005", "text": "finish it", "category": "simple" },
+    { "id": "s006", "text": "keep working", "category": "simple" },
+    { "id": "s007", "text": "there's more to do", "category": "simple" },
+    { "id": "s008", "text": "push through", "category": "simple" },
+    { "id": "s009", "text": "what's next?", "category": "simple" },
+    { "id": "s010", "text": "resume", "category": "simple" },
+    { "id": "s011", "text": "pick back up", "category": "simple" },
+    { "id": "s012", "text": "don't pause", "category": "simple" },
+    { "id": "s013", "text": "stay focused", "category": "simple" },
+    { "id": "s014", "text": "keep at it", "category": "simple" },
+    { "id": "s015", "text": "you have more to finish", "category": "simple" },
+    { "id": "s016", "text": "still more to do", "category": "simple" },
+    { "id": "s017", "text": "keep pushing", "category": "simple" },
+    { "id": "s018", "text": "almost there — keep going", "category": "simple" },
+    { "id": "s019", "text": "don't give up", "category": "simple" },
+    { "id": "s020", "text": "onward", "category": "simple" },
+    { "id": "s021", "text": "carry on", "category": "simple" },
+    { "id": "s022", "text": "finish what you started", "category": "simple" },
+    { "id": "s023", "text": "keep moving", "category": "simple" },
+    { "id": "s024", "text": "more to do — keep at it", "category": "simple" },
+    { "id": "s025", "text": "not finished yet", "category": "simple" },
+    { "id": "s026", "text": "keep rolling", "category": "simple" },
+    { "id": "s027", "text": "stay on it", "category": "simple" },
+    { "id": "s028", "text": "keep the pace", "category": "simple" },
+    { "id": "s029", "text": "you're not done", "category": "simple" },
+    { "id": "s030", "text": "keep driving forward", "category": "simple" },
+    { "id": "s031", "text": "don't lose momentum", "category": "simple" },
+    { "id": "s032", "text": "there's still work left", "category": "simple" },
+    { "id": "s033", "text": "keep the momentum", "category": "simple" },
+    { "id": "s034", "text": "next step", "category": "simple" },
     {
       "id": "s035",
-      "text": "the next step is obvious once you look at the code.",
+      "text": "keep going — you've got this",
       "category": "simple"
     },
-    {
-      "id": "s036",
-      "text": "don't polish. Get it working first.",
-      "category": "simple"
-    },
-    {
-      "id": "s037",
-      "text": "what does the test expect? Match that shape exactly.",
-      "category": "simple"
-    },
-    {
-      "id": "s038",
-      "text": "trust the scaffolding. Don't rebuild what's already there.",
-      "category": "simple"
-    },
-    {
-      "id": "s039",
-      "text": "keep the diff small. Easier to review, easier to revert.",
-      "category": "simple"
-    },
-    {
-      "id": "s040",
-      "text": "what's left on the checklist? Do the next box.",
-      "category": "simple"
-    },
-    {
-      "id": "s041",
-      "text": "one file at a time. Finish, save, move.",
-      "category": "simple"
-    },
-    {
-      "id": "s042",
-      "text": "don't over-engineer. YAGNI.",
-      "category": "simple"
-    },
-    {
-      "id": "s043",
-      "text": "are the tests green? If yes, ship it.",
-      "category": "simple"
-    },
-    {
-      "id": "s044",
-      "text": "what's the 20% that gets 80% done right now?",
-      "category": "simple"
-    },
-    {
-      "id": "s045",
-      "text": "the blocker is almost always smaller than it feels.",
-      "category": "simple"
-    },
-    {
-      "id": "s046",
-      "text": "stop reading code. Start writing.",
-      "category": "simple"
-    },
-    {
-      "id": "s047",
-      "text": "if it runs, commit it. Then improve.",
-      "category": "simple"
-    },
+    { "id": "s036", "text": "more work ahead", "category": "simple" },
+    { "id": "s037", "text": "keep executing", "category": "simple" },
+    { "id": "s038", "text": "don't slow down", "category": "simple" },
+    { "id": "s039", "text": "one more step", "category": "simple" },
+    { "id": "s040", "text": "stay with it", "category": "simple" },
+    { "id": "s041", "text": "keep chugging along", "category": "simple" },
+    { "id": "s042", "text": "more to finish", "category": "simple" },
+    { "id": "s043", "text": "don't stall out", "category": "simple" },
+    { "id": "s044", "text": "keep plugging away", "category": "simple" },
+    { "id": "s045", "text": "press on", "category": "simple" },
+    { "id": "s046", "text": "keep the flow going", "category": "simple" },
+    { "id": "s047", "text": "work to do", "category": "simple" },
     {
       "id": "s048",
-      "text": "don't second-guess a passing test.",
+      "text": "you still have things to do",
       "category": "simple"
     },
-    {
-      "id": "s049",
-      "text": "the feature isn't done until it's dogfooded.",
-      "category": "simple"
-    },
-    {
-      "id": "s050",
-      "text": "you're 2 minutes from finished. Keep going.",
-      "category": "simple"
-    }
+    { "id": "s049", "text": "back to it", "category": "simple" },
+    { "id": "s050", "text": "keep going until it's done", "category": "simple" }
   ]
 }
