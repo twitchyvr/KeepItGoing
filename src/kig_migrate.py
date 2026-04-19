@@ -2,18 +2,28 @@
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import shutil
 from pathlib import Path
 
-from kig_inject import add_entry, load_store, save_store, set_master
+from kig_inject import add_entry, set_master
 
 
 def _archive(src: Path, legacy_dir: Path) -> None:
+    """Move src into legacy_dir, timestamping the destination if it already exists.
+
+    Timestamping keeps the archive truly archival — if the user restores a legacy
+    file from backup and re-runs migration, earlier archive copies are preserved.
+    """
     if not src.exists():
         return
     legacy_dir.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(src), str(legacy_dir / src.name))
+    dest = legacy_dir / src.name
+    if dest.exists():
+        stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
+        dest = legacy_dir / f"{src.name}.{stamp}"
+    shutil.move(str(src), str(dest))
 
 
 def migrate_legacy(*, claude_home: Path, kig_home: Path) -> None:
