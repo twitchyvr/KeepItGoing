@@ -72,6 +72,23 @@ else
   echo "[4/5] Directives config already exists, skipping."
 fi
 
+# 5.5 KIG modes migration (idempotent — safe on every install)
+KIG_HOME="${HOME}/.claude/kig"
+mkdir -p "${KIG_HOME}/tabs" "${KIG_HOME}/legacy"
+
+python3 -c "
+import sys
+sys.path.insert(0, '${REPO_ROOT}/src')
+from pathlib import Path
+from kig_migrate import migrate_legacy
+migrate_legacy(claude_home=Path.home() / '.claude', kig_home=Path('${KIG_HOME}'))
+"
+
+# Delete old slash command (consolidated into /kig-inject)
+rm -f "${HOME}/.claude/commands/kig-pin.md"
+
+echo "      ✓ KIG modes migration complete (legacy files archived to ${KIG_HOME}/legacy/)"
+
 # 6. Launch
 echo "[5/5] Launching..."
 APP_PATH="${REPO_ROOT}/dist/${APP_NAME}.app"
