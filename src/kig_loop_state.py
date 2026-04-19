@@ -43,9 +43,16 @@ def record_loop_start(tty: str, *, cron_id: str) -> None:
     )
 
 
-def record_loop_end(tty: str, *, cron_id: str, reason: str = "stopped") -> None:
+def record_loop_end(
+    tty: str, *, cron_id: str, reason: str = "stopped", force: bool = False
+) -> None:
+    """End a tracked loop. Unless force=True, only ends if cron_id matches
+    the currently tracked one (prevents a mismatched CronDelete from
+    accidentally unmuting a different active loop)."""
     cur = _load(tty)
-    if cur.get("active") and cur.get("cron_id") == cron_id:
+    if not cur.get("active"):
+        return
+    if force or cur.get("cron_id") == cron_id:
         _save(
             tty,
             {

@@ -16,6 +16,17 @@ from pathlib import Path
 
 STATE_DIR = Path("/tmp/claude-keepitgoing")
 
+# Locate KIG Python modules (installed layout: ~/.claude/kig/_src/).
+# If present, enable /loop lifecycle tracking via Cron* tool events.
+_KIG_SRC = Path.home() / ".claude" / "kig" / "_src"
+if _KIG_SRC.is_dir() and str(_KIG_SRC) not in sys.path:
+    sys.path.insert(0, str(_KIG_SRC))
+try:
+    from kig_loop_state import record_loop_start, record_loop_end  # type: ignore
+except ImportError:
+    record_loop_start = None
+    record_loop_end = None
+
 
 def main():
     try:
@@ -68,8 +79,28 @@ def main():
         state["permission_pending"] = True
 
     elif event in ("PreToolUse", "PostToolUse"):
-        state["tool_name"] = data.get("tool_name", "")
+        tool_name = data.get("tool_name", "")
+        state["tool_name"] = tool_name
         state["idle"] = False
+        # /loop lifecycle tracking — key loop state by cwd so the AppleScript
+        # (which has cwd for every tab) can check it. First cut: track ALL
+        # CronCreate/CronDelete events, which over-mutes rare non-loop crons
+        # but never misses a /loop run.
+        if record_loop_start is not None and cwd:
+            try:
+                tool_input = data.get("tool_input", {}) or {}
+                tool_result = data.get("tool_result", {}) or {}
+                cron_id = (
+                    tool_result.get("id")
+                    or tool_input.get("id")
+                    or session_id  # fallback — deterministic per session
+                )
+                if event == "PreToolUse" and tool_name == "CronCreate":
+                    record_loop_start(cwd, cron_id=str(cron_id))
+                elif event == "PostToolUse" and tool_name == "CronDelete":
+                    record_loop_end(cwd, cron_id=str(cron_id), reason="cron_delete")
+            except Exception:
+                pass  # never break the existing hook behavior
 
     elif event == "SessionStart":
         state["idle"] = False
@@ -101,6 +132,18 @@ def main():
     elif event == "SessionEnd":
         state["ended"] = True
         state["reason"] = data.get("reason", "")
+        # Force-clear any active /loop state so the AppleScript doesn't keep
+        # this session muted forever if the cron outlived the session.
+        if record_loop_end is not None and cwd:
+            try:
+                record_loop_end(
+                    cwd,
+                    cron_id="__session_end__",
+                    reason="session_end",
+                    force=True,
+                )
+            except Exception:
+                pass
         # Write the ended state then clean up after a delay
         state_file = STATE_DIR / f"{session_id}.json"
         state_file.write_text(json.dumps(state, indent=2))

@@ -52,3 +52,15 @@ def test_per_tty_isolation(tmp_path, monkeypatch):
     record_loop_start("ttys001", cron_id="a")
     assert is_loop_active("ttys001") is True
     assert is_loop_active("ttys002") is False
+
+
+def test_end_force_clears_regardless_of_cron_id(tmp_path, monkeypatch):
+    """SessionEnd uses force=True to clear without matching cron_id."""
+    monkeypatch.setattr("kig_loop_state.LOOP_STATE_DIR", tmp_path)
+    record_loop_start("ttys001", cron_id="real-cron-1")
+    record_loop_end("ttys001", cron_id="__session_end__")
+    assert is_loop_active("ttys001") is True
+    record_loop_end(
+        "ttys001", cron_id="__session_end__", force=True, reason="session_end"
+    )
+    assert is_loop_active("ttys001") is False
