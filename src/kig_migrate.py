@@ -36,8 +36,17 @@ def migrate_legacy(*, claude_home: Path, kig_home: Path) -> None:
     if pins_src.exists():
         try:
             data = json.loads(pins_src.read_text())
-            for text in data.get("pins", []):
-                if text:
+            # Two legacy shapes exist in the wild:
+            #   dict: {"pins": ["a", "b"]}
+            #   list: ["a", "b"]                 ← earlier rough cut
+            if isinstance(data, dict):
+                pins = data.get("pins", [])
+            elif isinstance(data, list):
+                pins = data
+            else:
+                pins = []
+            for text in pins:
+                if isinstance(text, str) and text:
                     add_entry(inject_path, text=text, for_modes=["all"])
         except json.JSONDecodeError:
             pass
