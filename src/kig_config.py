@@ -40,6 +40,38 @@ def load_global() -> dict[str, Any]:
     return merged
 
 
+def find_project_kig(cwd: Path) -> Path | None:
+    """Walk up from cwd looking for a .kig/ directory. Return it or None."""
+    cur = cwd.resolve()
+    while True:
+        candidate = cur / ".kig"
+        if candidate.is_dir():
+            return candidate
+        if cur.parent == cur:
+            return None
+        cur = cur.parent
+
+
+def load_project(cwd: Path) -> dict[str, Any]:
+    """Read project .kig/settings.json (if any) filtered to known keys."""
+    proj = find_project_kig(cwd)
+    if proj is None:
+        return {}
+    path = proj / "settings.json"
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return {}
+    return {k: v for k, v in data.items() if k in DEFAULTS}
+
+
 def load_merged(cwd: Path | None = None) -> dict[str, Any]:
-    """Global + project settings, project wins key-by-key. Placeholder for Task 2."""
-    return load_global()
+    """Defaults <- global settings <- project settings. Later wins."""
+    merged = dict(DEFAULTS)
+    merged.update({k: v for k, v in load_global().items() if k in DEFAULTS})
+    if cwd is None:
+        cwd = Path.cwd()
+    merged.update(load_project(cwd))
+    return merged
