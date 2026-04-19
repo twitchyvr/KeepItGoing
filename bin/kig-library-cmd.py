@@ -13,6 +13,12 @@ import secrets
 import sys
 from pathlib import Path
 
+# Locate KIG Python modules. In production they live at ~/.claude/kig/_src/;
+# in dev / tests PYTHONPATH usually points at the repo src/ instead.
+_KIG_SRC = Path.home() / ".claude" / "kig" / "_src"
+if _KIG_SRC.is_dir() and str(_KIG_SRC) not in sys.path:
+    sys.path.insert(0, str(_KIG_SRC))
+
 from kig_config import find_project_kig, global_kig_dir
 
 
