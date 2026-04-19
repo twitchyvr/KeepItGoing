@@ -105,14 +105,16 @@ echo "      ✓ Legacy files archived to ${KIG_HOME}/legacy/"
 # Install CLI helpers for slash commands
 cp "${REPO_ROOT}/bin/kig-inject-cmd.py"  "${BIN_DIR}/kig-inject-cmd.py"
 cp "${REPO_ROOT}/bin/kig-library-cmd.py" "${BIN_DIR}/kig-library-cmd.py"
-chmod +x "${BIN_DIR}/kig-inject-cmd.py" "${BIN_DIR}/kig-library-cmd.py"
+cp "${REPO_ROOT}/bin/kig-config-cmd.py"  "${BIN_DIR}/kig-config-cmd.py"
+chmod +x "${BIN_DIR}/kig-inject-cmd.py" "${BIN_DIR}/kig-library-cmd.py" "${BIN_DIR}/kig-config-cmd.py"
 
-# Install /kig-inject and /kig-library slash commands
+# Install /kig-inject, /kig-library, /kig-config slash commands
 CMD_DIR="${HOME}/.claude/commands"
 mkdir -p "${CMD_DIR}"
 cp "${REPO_ROOT}/config/kig-inject.md.tmpl"  "${CMD_DIR}/kig-inject.md"
 cp "${REPO_ROOT}/config/kig-library.md.tmpl" "${CMD_DIR}/kig-library.md"
-echo "      ✓ slash commands installed: /kig-inject, /kig-library"
+cp "${REPO_ROOT}/config/kig-config.md.tmpl"  "${CMD_DIR}/kig-config.md"
+echo "      ✓ slash commands installed: /kig-inject, /kig-library, /kig-config"
 
 # 6. Launch
 echo "[5/5] Launching..."

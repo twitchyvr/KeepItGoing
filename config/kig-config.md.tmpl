@@ -1,0 +1,53 @@
+---
+description: Manage KIG settings (timeouts, modes, scopes) — project or global scope
+argument-hint: [set|get|show|reset|reset-all|help] [--global] [key] [value]
+allowed-tools: Bash
+---
+
+# /kig-config — manage KIG settings
+
+Read or change KIG settings: default mode, poll interval, scope-resolution strategy, `/loop` detection. Project scope by default; `--global` to change machine-wide defaults.
+
+Run the backing script with the user's arguments:
+
+```bash
+~/bin/kig-config-cmd.py "$@"
+```
+
+## Known settings
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `default_mode` | string | `verbose` | `minimal` / `simple` / `verbose` |
+| `scope_mode` | string | `per-category` | Library merge strategy |
+| `poll_interval_sec` | int | `30` | Monitor polling cadence |
+| `idle_threshold_sec` | int | `60` | Seconds of inactivity = idle |
+| `mute_on_loop_detect` | bool | `true` | Auto-mute when `/loop` detected |
+| `suggest_loop_when_long` | bool | `true` | Nudge user to use `/loop` for long work |
+| `suggest_loop_threshold_min` | int | `15` | Minutes before suggest-loop fires |
+
+## Subcommands
+
+| Command | Effect |
+|---|---|
+| `set [--global] <key> <value>` | Write override |
+| `get <key>` | Print resolved value (after merging all layers) |
+| `show` | Print every key with its resolved value |
+| `reset [--global] <key>` | Remove override (fall back to next layer) |
+| `reset-all [--global]` | Wipe all overrides in that scope |
+| `help` | This text |
+
+## Examples
+
+```
+/kig-config set default_mode simple
+/kig-config set --global poll_interval_sec 60
+/kig-config get default_mode
+/kig-config show
+/kig-config reset default_mode
+```
+
+## Scope
+
+- **Project (default):** `./.kig/settings.json`
+- **`--global`:** `~/.claude/kig/settings.json`
