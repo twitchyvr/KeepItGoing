@@ -1,0 +1,43 @@
+---
+description: Manage the KIG nudge-sentence library (project-scoped by default)
+argument-hint: [add|remove|list|suppress|isolate|help] [--global] [--for MODE,MODE,...] [text-or-target]
+allowed-tools: Bash
+---
+
+# /kig-library — manage nudge sentences
+
+Add or remove sentences the KIG monitor pulls from when nudging. Project scope by default; `--global` to affect every project. Use `suppress` to hide specific global categories, or `isolate` for a full blackout of globals in this project.
+
+Run the backing script with the user's arguments:
+
+```bash
+~/bin/kig-library-cmd.py "$@"
+```
+
+## Subcommands
+
+| Command | Effect |
+|---|---|
+| `add [--global] [--for MODES] "text"` | Add an entry (MODES comma-separated, default `all`) |
+| `remove [--global] --mode MODE <N>` | Remove Nth entry from that mode's library |
+| `list [--global]` | Show all entries in all three modes |
+| `suppress <category-or-id>` | (project only) hide a global category/id from this project |
+| `unsuppress <id>` | Undo a suppress |
+| `isolate` | (project only) ignore ALL globals for this project |
+| `unisolate` | Restore globals |
+| `help` | This text |
+
+## Examples
+
+```
+/kig-library add "don't commit compiled .app bundles"
+/kig-library add --global --for simple "run tests before committing"
+/kig-library add --for simple,verbose "this project uses Firebase Auth"
+/kig-library suppress visual_verification
+/kig-library isolate
+```
+
+## Scope
+
+- **Default:** this project (`./.kig/{verbose-entries,minimal,simple,suppress}.json`, `./.kig/isolate`)
+- **`--global`:** machine-wide (`~/.claude/kig/{verbose-entries,minimal,simple}.json`)

@@ -102,6 +102,18 @@ rm -f "${HOME}/.claude/commands/kig-pin.md"
 echo "      ✓ KIG modes runtime installed to ${KIG_SRC}"
 echo "      ✓ Legacy files archived to ${KIG_HOME}/legacy/"
 
+# Install CLI helpers for slash commands
+cp "${REPO_ROOT}/bin/kig-inject-cmd.py"  "${BIN_DIR}/kig-inject-cmd.py"
+cp "${REPO_ROOT}/bin/kig-library-cmd.py" "${BIN_DIR}/kig-library-cmd.py"
+chmod +x "${BIN_DIR}/kig-inject-cmd.py" "${BIN_DIR}/kig-library-cmd.py"
+
+# Install /kig-inject and /kig-library slash commands
+CMD_DIR="${HOME}/.claude/commands"
+mkdir -p "${CMD_DIR}"
+cp "${REPO_ROOT}/config/kig-inject.md.tmpl"  "${CMD_DIR}/kig-inject.md"
+cp "${REPO_ROOT}/config/kig-library.md.tmpl" "${CMD_DIR}/kig-library.md"
+echo "      ✓ slash commands installed: /kig-inject, /kig-library"
+
 # 6. Launch
 echo "[5/5] Launching..."
 APP_PATH="${REPO_ROOT}/dist/${APP_NAME}.app"

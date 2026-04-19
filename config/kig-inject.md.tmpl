@@ -1,0 +1,45 @@
+---
+description: Consolidated pin+inject hybrid — prepend user context to every KIG nudge
+argument-hint: [add|remove|toggle|list|on|off|clear|help] [--project] [--for MODE,MODE,...] [text]
+allowed-tools: Bash
+---
+
+# /kig-inject — consolidated context injection
+
+Replaces the old `/kig-pin` + `/kig-inject`. Use this to save reminders / context that KIG prepends to every nudge. Entries form a list; each is individually toggleable; a master switch turns the whole block on/off.
+
+Run the backing script with the user's arguments:
+
+```bash
+~/bin/kig-inject-cmd.py "$@"
+```
+
+## Subcommands
+
+| Command | Effect |
+|---|---|
+| `add [--project] [--for MODES] "text"` | Append entry (MODES comma-separated: `all` or subset of `minimal,simple,verbose`; default `all`) |
+| `remove [--project] <N>` | Remove entry by 1-indexed position |
+| `toggle [--project] <N>` | Flip enabled/disabled without removing |
+| `list [--project]` | Show all entries with state and mode tags |
+| `show [--project]` | Alias for list |
+| `on [--project]` | Master switch on |
+| `off [--project]` | Master switch off (entries preserved) |
+| `clear [--project]` | Wipe all entries + master off |
+| `help` | This text |
+
+## Examples
+
+```
+/kig-inject add "working on Rust crate — don't touch Python files"
+/kig-inject add --for simple "check logs at /tmp/claude-keepitgoing/"
+/kig-inject add --for simple,verbose "don't drop the failing test"
+/kig-inject list
+/kig-inject toggle 2
+/kig-inject off
+```
+
+## Scope
+
+- **Default:** global (`~/.claude/kig/inject.json`) — affects every session
+- **`--project`:** scoped to current project (`./.kig/inject.json`)
