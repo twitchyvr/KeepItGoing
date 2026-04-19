@@ -1,0 +1,23 @@
+{
+  "entries": [
+    { "id": "min001", "text": "keep going", "category": "minimal" },
+    { "id": "min002", "text": "continue", "category": "minimal" },
+    { "id": "min003", "text": "don't stop", "category": "minimal" },
+    {
+      "id": "min004",
+      "text": "you have more to finish",
+      "category": "minimal"
+    },
+    { "id": "min005", "text": "keep working", "category": "minimal" },
+    { "id": "min006", "text": "not done yet", "category": "minimal" },
+    { "id": "min007", "text": "there's more", "category": "minimal" },
+    { "id": "min008", "text": "push through", "category": "minimal" },
+    { "id": "min009", "text": "what's next?", "category": "minimal" },
+    { "id": "min010", "text": "resume", "category": "minimal" },
+    { "id": "min011", "text": "pick back up", "category": "minimal" },
+    { "id": "min012", "text": "don't pause", "category": "minimal" },
+    { "id": "min013", "text": "stay focused", "category": "minimal" },
+    { "id": "min014", "text": "finish it", "category": "minimal" },
+    { "id": "min015", "text": "keep at it", "category": "minimal" }
+  ]
+}
