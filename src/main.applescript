@@ -525,7 +525,29 @@ on extractSelectedOption(theText)
 	return ""
 end extractSelectedOption
 
-on generatePrompt(cwd)
+on generatePrompt(cwd, sessionTty)
+	-- Mode-aware dispatch. minimal/simple → tiny curated library (via kig_modes.pick_nudge).
+	-- verbose (default) → existing 70-category directive generator.
+	set kigSrc to (POSIX path of (path to home folder)) & ".claude/kig/_src"
+	set tabMode to "verbose"
+	if sessionTty is not "" then
+		try
+			set modeCmd to "KIG_SRC=" & quoted form of kigSrc & " KIG_TTY=" & quoted form of sessionTty & " python3 -c 'import os, sys; sys.path.insert(0, os.environ[\"KIG_SRC\"]); from kig_tab_state import load_tab; print(load_tab(os.environ[\"KIG_TTY\"]).mode)' 2>/dev/null"
+			set tabMode to my shellCmd(modeCmd)
+			if tabMode is "" then set tabMode to "verbose"
+		end try
+	end if
+
+	if tabMode is "minimal" or tabMode is "simple" then
+		try
+			set pickCmd to "KIG_SRC=" & quoted form of kigSrc & " KIG_MODE=" & tabMode & " KIG_CWD=" & quoted form of cwd & " python3 -c 'import os, sys; sys.path.insert(0, os.environ[\"KIG_SRC\"]); from kig_modes import pick_nudge; from pathlib import Path; print(pick_nudge(mode=os.environ[\"KIG_MODE\"], cwd=Path(os.environ[\"KIG_CWD\"] or \".\")))'"
+			set lightPrompt to my shellCmd(pickCmd)
+			if lightPrompt is not "" then return lightPrompt
+		end try
+		return "keep going"
+	end if
+
+	-- Verbose mode: existing path.
 	set cmd to "python3 " & quoted form of generatorScript
 	if cwd is not "" then
 		set cmd to cmd & " --cwd " & quoted form of cwd
@@ -1068,7 +1090,11 @@ on idle
 									set statusChecks to {"status? anything to report while that runs?", "how's it going? any updates on the background task?", "still building? let me know if you're blocked on anything.", "quick check-in — anything you need from me while you wait?", "any progress to share? take your time, just checking in.", "background task still running? what's next once it finishes?", "just a nudge — if you're blocked on something, say so. otherwise carry on."}
 									set thePrompt to item (random number from 1 to count of statusChecks) of statusChecks
 								else if not isCompactionRefresh then
-									set thePrompt to my generatePrompt(sessionCwd)
+									set _genTty to ""
+									try
+										tell application "iTerm" to set _genTty to tty of s
+									end try
+									set thePrompt to my generatePrompt(sessionCwd, _genTty)
 									-- Override from `kig edit`: if override-prompt.txt is non-empty, use it instead
 									try
 										set overridePath to "/tmp/claude-keepitgoing/override-prompt.txt"
@@ -1176,7 +1202,11 @@ on idle
 						set timeSince to my getTimeSinceLastSend(sessionKey)
 						set requiredDelay to my cooldownForMode("blind")
 						if timeSince > requiredDelay then
-							set thePrompt to my generatePrompt(sessionCwd)
+							set _genTty to ""
+							try
+								tell application "iTerm" to set _genTty to tty of s
+							end try
+							set thePrompt to my generatePrompt(sessionCwd, _genTty)
 							if (count of characters of thePrompt) ≥ 20 then
 								-- SPECULATIVE MENU ACCEPT: when the user is away (HID
 								-- idle past 120s), preface the blind nudge with a "1"
