@@ -1092,23 +1092,34 @@ on idle
 								-- status check instead of a full directive prompt.
 								-- Keeps the session alive without derailing the task.
 								set thePrompt to ""
-								-- COMPACTION REFRESHER: if this session recently
-								-- compacted, replace the normal directive with a
-								-- re-orientation prompt. Consumed once; the flag
-								-- is cleared after sending.
+								-- COMPACTION HANDLING: after a compaction, only nudge if Claude
+								-- is actually idle/hanging. If it's still working (recent tool
+								-- hook or a background shell), stay silent — a nudge would derail
+								-- the current task. Flag is consumed either way.
 								set isCompactionRefresh to false
+								set postCompactionSkip to false
 								if sessionKey is in compactionPendingKeys then
-									set isCompactionRefresh to true
-									-- Remove sessionKey from pending list.
+									-- Consume the flag regardless of action taken.
 									set newPending to {}
 									repeat with pk in compactionPendingKeys
 										if (contents of pk) is not sessionKey then set end of newPending to (contents of pk)
 									end repeat
 									set compactionPendingKeys to newPending
-									set thePrompt to "context compaction just completed — your memory of recent work may be degraded. before continuing: (1) run `git branch --show-current` and `git status` to orient yourself (2) re-read project CLAUDE.md for conventions (3) check ~/.claude/projects/ memory files for session context (4) review your task list if you have one. then resume what you were working on — do NOT start new work or switch context."
-									my logLine("[kig] COMPACTION REFRESHER queued | cwd=" & sessionCwd)
+									set claudeIsWorking to (hookWorking or hasBackgroundShell)
+									if claudeIsWorking then
+										set postCompactionSkip to true
+										my logLine("[kig] COMPACTION skipped — Claude still working | cwd=" & sessionCwd)
+									else
+										set isCompactionRefresh to true
+										set thePrompt to "please continue what you were working on. there was a compaction and i don't want you to forget what you were working on."
+										my logLine("[kig] COMPACTION nudge (Claude was idle) | cwd=" & sessionCwd)
+									end if
 								end if
-								if not isCompactionRefresh and hasBackgroundShell then
+								if postCompactionSkip then
+									-- Claude is working post-compaction; leave thePrompt empty so
+									-- the <2-char filter below skips sending this tick entirely.
+									set thePrompt to ""
+								else if not isCompactionRefresh and hasBackgroundShell then
 									set statusChecks to {"status? anything to report while that runs?", "how's it going? any updates on the background task?", "still building? let me know if you're blocked on anything.", "quick check-in — anything you need from me while you wait?", "any progress to share? take your time, just checking in.", "background task still running? what's next once it finishes?", "just a nudge — if you're blocked on something, say so. otherwise carry on."}
 									set thePrompt to item (random number from 1 to count of statusChecks) of statusChecks
 								else if not isCompactionRefresh then
