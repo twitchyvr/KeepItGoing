@@ -36,6 +36,7 @@
 #   kig watch              live countdown display, refreshing every second
 #   kig list               show every Claude tab's on/off state
 #   kig log                tail the KIG log
+#   kig mode [MODE]        get/set per-tab nudge mode (minimal|simple|verbose)
 #   kig help               show this help
 #
 # State files (in /tmp/claude-keepitgoing/):
@@ -694,6 +695,35 @@ EOF
     ;;
   log | tail)
     exec tail -f "$LOG_FILE"
+    ;;
+  mode)
+    # Per-tab mode: minimal | simple | verbose
+    KIG_SRC="${HOME}/.claude/kig/_src"
+    # tty(1) may print "not a tty" (with trailing newline) in non-interactive
+    # contexts; strip to a single safe line before passing to Python.
+    TTY_NAME="$(tty 2>/dev/null | tr -d '\n' || true)"
+    [ -z "$TTY_NAME" ] && TTY_NAME="unknown"
+    NEW_MODE="${2:-}"
+    if [ -z "$NEW_MODE" ]; then
+      KIG_SRC="$KIG_SRC" KIG_TTY="$TTY_NAME" python3 - <<'PYEOF'
+import os, sys
+sys.path.insert(0, os.environ["KIG_SRC"])
+from kig_tab_state import load_tab
+print(load_tab(os.environ["KIG_TTY"]).mode)
+PYEOF
+      exit 0
+    fi
+    case "$NEW_MODE" in
+      minimal|simple|verbose) ;;
+      *) echo "kig mode: must be minimal|simple|verbose (got '$NEW_MODE')" >&2; exit 2 ;;
+    esac
+    KIG_SRC="$KIG_SRC" KIG_TTY="$TTY_NAME" KIG_NEW_MODE="$NEW_MODE" python3 - <<'PYEOF'
+import os, sys
+sys.path.insert(0, os.environ["KIG_SRC"])
+from kig_tab_state import set_mode
+set_mode(os.environ["KIG_TTY"], os.environ["KIG_NEW_MODE"])
+PYEOF
+    echo "Tab $TTY_NAME: mode=$NEW_MODE"
     ;;
   help | --help | -h)
     sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'

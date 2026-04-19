@@ -72,13 +72,25 @@ else
   echo "[4/5] Directives config already exists, skipping."
 fi
 
-# 5.5 KIG modes migration (idempotent — safe on every install)
+# 5.5 KIG modes: install Python runtime modules, seed libraries, run migration
 KIG_HOME="${HOME}/.claude/kig"
-mkdir -p "${KIG_HOME}/tabs" "${KIG_HOME}/legacy"
+KIG_SRC="${KIG_HOME}/_src"
+mkdir -p "${KIG_HOME}/tabs" "${KIG_HOME}/legacy" "${KIG_SRC}/kig_seeds"
 
+# Copy Python modules + seeds into a stable runtime location (bin/kig and
+# main.applescript import from here, not from the repo).
+cp "${REPO_ROOT}/src/kig_config.py"      "${KIG_SRC}/kig_config.py"
+cp "${REPO_ROOT}/src/kig_scope.py"       "${KIG_SRC}/kig_scope.py"
+cp "${REPO_ROOT}/src/kig_inject.py"      "${KIG_SRC}/kig_inject.py"
+cp "${REPO_ROOT}/src/kig_modes.py"       "${KIG_SRC}/kig_modes.py"
+cp "${REPO_ROOT}/src/kig_tab_state.py"   "${KIG_SRC}/kig_tab_state.py"
+cp "${REPO_ROOT}/src/kig_migrate.py"     "${KIG_SRC}/kig_migrate.py"
+cp "${REPO_ROOT}/src/kig_seeds/"*.json   "${KIG_SRC}/kig_seeds/"
+
+# Legacy migration (idempotent — safe on every install)
 python3 -c "
 import sys
-sys.path.insert(0, '${REPO_ROOT}/src')
+sys.path.insert(0, '${KIG_SRC}')
 from pathlib import Path
 from kig_migrate import migrate_legacy
 migrate_legacy(claude_home=Path.home() / '.claude', kig_home=Path('${KIG_HOME}'))
@@ -87,7 +99,8 @@ migrate_legacy(claude_home=Path.home() / '.claude', kig_home=Path('${KIG_HOME}')
 # Delete old slash command (consolidated into /kig-inject)
 rm -f "${HOME}/.claude/commands/kig-pin.md"
 
-echo "      ✓ KIG modes migration complete (legacy files archived to ${KIG_HOME}/legacy/)"
+echo "      ✓ KIG modes runtime installed to ${KIG_SRC}"
+echo "      ✓ Legacy files archived to ${KIG_HOME}/legacy/"
 
 # 6. Launch
 echo "[5/5] Launching..."
